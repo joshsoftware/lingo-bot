@@ -30,7 +30,7 @@ EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 DEFAULT_FROM_EMAIL = "noreply@mail.attendee.dev"
 
-ADMINS = []
+ADMINS = ["innovationlab@joshsoftware.com"]
 
 if os.getenv("ERROR_REPORTS_RECEIVER_EMAIL_ADDRESS"):
     ADMINS.append(
