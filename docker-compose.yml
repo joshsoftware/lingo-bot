@@ -1,56 +1,100 @@
 version: '3.8'
 
 services:
-  attendee-worker:
-    build:
-      context: ./attendee
-      dockerfile: Dockerfile
+  # Shared Redis service for both Bot and Attendee
+  redis:
+    image: redis:7-alpine
+    container_name: redis-shared
+    ports:
+      - "6379:6379"
     networks:
-      - attendee_network
-    environment:
-      - DATABASE_URL=${DATABASE_URL}
-      - REDIS_HOST=${REDIS_HOST}
-      - REDIS_PORT=${REDIS_PORT}
-      - REDIS_DB=${REDIS_DB}
-      - DJANGO_SETTINGS_MODULE=attendee.settings.production
-      - EMAIL_HOST_USER=${EMAIL_HOST_USER}
-      - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD}
-      - ERROR_REPORTS_RECEIVER_EMAIL_ADDRESS=${ERROR_REPORTS_RECEIVER_EMAIL_ADDRESS}
-    command: celery -A attendee worker -l INFO
+      - lingo_network
+    restart: unless-stopped
+    volumes:
+      - redis:/data/redis
 
+  # PostgreSQL for Attendee
+  postgres:
+    image: postgres:15.3-alpine
+    container_name: postgres-attendee
+    environment:
+      POSTGRES_DB: attendee_development
+      POSTGRES_USER: attendee_development_user
+      POSTGRES_PASSWORD: attendee_development_user
+      PGDATA: /data/postgres
+    volumes:
+      - postgres:/data/postgres
+    networks:
+      - lingo_network
+    restart: unless-stopped
+    ports:
+      - "5433:5432" 
+
+  # Lingo Bot FastAPI service
+  lingo-bot:
+    build:
+      context: ./Bot
+    container_name: lingo-bot-app
+    ports:
+      - "8101:8001"
+    depends_on:
+      - redis
+    environment:
+      - TZ=Asia/Kolkata
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      - ./Bot:/app  # Mount Bot directory
+    networks:
+      - lingo_network
+    restart: unless-stopped
+
+  # Attendee Django application
   attendee-app:
     build:
       context: ./attendee
-      dockerfile: Dockerfile
+    container_name: attendee-app
+    volumes:
+      - ./attendee:/attendee
     networks:
-      - attendee_network
+      - lingo_network
     ports:
-      - "8000:8000"
+      - "8100:8000"
+    depends_on:
+      - postgres
+      - redis
     environment:
-      - DATABASE_URL=${DATABASE_URL}
-      - REDIS_HOST=${REDIS_HOST}
-      - REDIS_PORT=${REDIS_PORT}
-      - REDIS_DB=${REDIS_DB}
-      - DJANGO_SETTINGS_MODULE=attendee.settings.production
-      - EMAIL_HOST_USER=${EMAIL_HOST_USER}
-      - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD}
-      - ERROR_REPORTS_RECEIVER_EMAIL_ADDRESS=${ERROR_REPORTS_RECEIVER_EMAIL_ADDRESS}
-    command: gunicorn attendee.wsgi:application --bind 0.0.0.0:8000
+      - POSTGRES_HOST=postgres
+      - REDIS_URL=redis://redis:6379/5
+      - DJANGO_SETTINGS_MODULE=attendee.settings.development
+    command: python manage.py runserver 0.0.0.0:8000
+    restart: unless-stopped
 
-  lingo-bot:
+  # Attendee Celery worker
+  attendee-worker:
     build:
-      context: ./lingo-bot
-      dockerfile: Dockerfile
-    container_name: fastapi-app
-    ports:
-      - "8101:8001"
-    environment:
-      - TZ=Asia/Kolkata
-      - REDIS_HOST=${REDIS_HOST}
-      - REDIS_PORT=${REDIS_PORT}
+      context: ./attendee
+    container_name: attendee-worker
+    volumes:
+      - ./attendee:/attendee
     networks:
-      - attendee_network
+      - lingo_network
+    depends_on:
+      - postgres
+      - redis
+      - attendee-app
+    environment:
+      - POSTGRES_HOST=postgres
+      - REDIS_URL=redis://redis:6379/5
+      - DJANGO_SETTINGS_MODULE=attendee.settings.development
+    command: celery -A attendee worker -l INFO
+    restart: unless-stopped
 
 networks:
-  attendee_network:
+  lingo_network:
     driver: bridge
+
+volumes:
+  postgres:
+  redis:
