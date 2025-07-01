@@ -7,6 +7,7 @@ from app.log_config import logger
 AWS_RECORDING_STORAGE_BUCKET_NAME = os.getenv("AWS_RECORDING_STORAGE_BUCKET_NAME")
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+AWS_REGION=os.getenv("AWS_REGION")
 
 def generate_presigned_url(file_key, expiration=3600):
     try:
@@ -14,6 +15,7 @@ def generate_presigned_url(file_key, expiration=3600):
             "s3",
             aws_access_key_id=AWS_ACCESS_KEY_ID,
             aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+            region_name=AWS_REGION,
         )
         
         presigned_url = s3_client.generate_presigned_url(
