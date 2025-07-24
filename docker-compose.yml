@@ -1,100 +1,95 @@
-version: '3.8'
+  version: '3.8'
 
-services:
-  # Shared Redis service for both Bot and Attendee
-  redis:
-    image: redis:7-alpine
-    container_name: redis
-    ports:
-      - "6379:6379"
-    networks:
-      - lingo_network
-    restart: unless-stopped
-    volumes:
-      - redis:/data/redis
+  services:
+    # Shared Redis service
+    redis:
+      image: redis:7-alpine
+      container_name: redis
+      ports:
+        - "6379:6379"
+      networks:
+        - lingo_network
+      restart: unless-stopped
+      volumes:
+        - redis:/data/redis
 
-  # PostgreSQL for Attendee
-  postgres:
-    image: postgres:15.3-alpine
-    container_name: postgres-attendee
-    environment:
-      POSTGRES_DB: attendee_development
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      PGDATA: /data/postgres
-    volumes:
-      - postgres:/data/postgres
-    networks:
-      - lingo_network
-    restart: unless-stopped
-    ports:
-      - "5433:5432" 
+    # PostgreSQL for Attendee
+    postgres:
+      image: postgres:15.3-alpine
+      container_name: postgres-attendee
+      environment:
+        POSTGRES_DB: attendee_development
+        POSTGRES_USER: postgres
+        POSTGRES_PASSWORD: postgres
+        PGDATA: /data/postgres
+      volumes:
+        - postgres:/data/postgres
+      networks:
+        - lingo_network
+      restart: unless-stopped
+      ports:
+        - "5433:5432"
 
-  # Lingo Bot FastAPI service
-  lingo-bot:
+    # Lingo Bot FastAPI (Build at runtime)
+    lingo-bot:
     build:
-      context: ./Bot
-    container_name: lingo-bot-app
+      context: .
+    container_name: fastapi-app
     ports:
       - "8101:8001"
     depends_on:
       - redis
     environment:
       - TZ=Asia/Kolkata
-      - REDIS_URL=redis://redis:6379/0
     volumes:
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
-      - ./Bot:/app  # Mount Bot directory
     networks:
-      - lingo_network
-    restart: unless-stopped
+      - attendee_attendee_network
 
-  # Attendee Django application
-  attendee-app:
-    build:
-      context: ./attendee
-    container_name: attendee-app
-    volumes:
-      - ./attendee:/attendee
-    networks:
-      - lingo_network
-    ports:
-      - "8100:8000"
-    depends_on:
-      - postgres
-      - redis
-    environment:
-      - POSTGRES_HOST=postgres
-      - REDIS_URL=redis://redis:6379/5
-      - DJANGO_SETTINGS_MODULE=attendee.settings.development
-    command: python manage.py runserver 0.0.0.0:8000
-    restart: unless-stopped
+    # Attendee Django application (Prebuilt image)
+    attendee-app:
+      image: selectus2/attendee-app:latest
+      container_name: attendee-app
+      volumes:
+        - ./attendee:/attendee
+      networks:
+        - lingo_network
+      ports:
+        - "8100:8000"
+      depends_on:
+        - postgres
+        - redis
+      environment:
+        - POSTGRES_HOST=postgres
+        - REDIS_URL=redis://redis:6379/5
+        - DJANGO_SETTINGS_MODULE=attendee.settings.development
+      command: python manage.py runserver 0.0.0.0:8000
+      restart: unless-stopped
 
-  # Attendee Celery worker
-  attendee-worker:
-    build:
-      context: ./attendee
-    container_name: attendee-worker
-    volumes:
-      - ./attendee:/attendee
-    networks:
-      - lingo_network
-    depends_on:
-      - postgres
-      - redis
-      - attendee-app
-    environment:
-      - POSTGRES_HOST=postgres
-      - REDIS_URL=redis://redis:6379/5
-      - DJANGO_SETTINGS_MODULE=attendee.settings.development
-    command: celery -A attendee worker -l INFO
-    restart: unless-stopped
+    # Attendee Celery worker (Prebuilt image)
+    attendee-worker:
+      image: selectus2/attendee-worker:latest
+      container_name: attendee-worker
+      volumes:
+        - ./attendee:/attendee
+      networks:
+        - lingo_network
+      depends_on:
+        - postgres
+        - redis
+        - attendee-app
+      environment:
+        - POSTGRES_HOST=postgres
+        - REDIS_URL=redis://redis:6379/5
+        - DJANGO_SETTINGS_MODULE=attendee.settings.development
+      command: celery -A attendee worker -l INFO
+      restart: unless-stopped
 
-networks:
-  lingo_network:
-    driver: bridge
+  networks:
+    lingo_network:
+      driver: bridge
 
-volumes:
-  postgres:
-  redis:
+  volumes:
+    postgres:
+    redis:
