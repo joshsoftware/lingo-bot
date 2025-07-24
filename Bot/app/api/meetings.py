@@ -26,6 +26,8 @@ redis_client = redis.Redis(host='redis', port=6379, db=0, decode_responses=True)
 router = APIRouter(prefix="/meetings", tags=["Meetings"])
 
 LINGO_API_URL = os.getenv("LINGO_API_URL")
+GET_MEETING_URL=os.getenv("GET_MEETING_URL")
+SCHEDULE_JOIN_BOT_URL=os.getenv("SCHEDULE_JOIN_BOT_URL")
 
 class LingoRequest(BaseModel):
     key: str
@@ -84,7 +86,7 @@ def get_meetings(body: ScheduleMeeting, token: str = Depends(OAUTH2_SCHEME)):
             # Schedule the bot by calling the existing API
             try:
                     response = requests.post(
-                        "http://localhost:8001/scheduler/schedule-join-bot",
+                        SCHEDULE_JOIN_BOT_URL,
                         headers={"Content-Type": "application/json"},
                         json={
                             "meeting_url": meeting_url,
@@ -214,7 +216,7 @@ async def calendar_webhook(
         logger.info("Calling /meetings/ endpoint via requests")
         try:
             response = requests.get(
-                "http://localhost:8001/meetings/",
+                GET_MEETING_URL,
                 headers={"Authorization": f"Bearer {token}"}
             )
 

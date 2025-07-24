@@ -6,14 +6,17 @@ import aiohttp
 import logging
 from logging.handlers import RotatingFileHandler
 import os
+from dotenv import load_dotenv
 
+# Load environment variables from .env file
+load_dotenv()
 # --- Configuration ---
-PG_USER = "postgres"
-PG_PASS = "postgres"
-PG_HOST = "localhost"
-PG_PORT = "5432"
-DB_NAME = "lingo_ai"
-API_URL = "http://localhost:8001/meetings/"
+PG_USER = os.getenv("PG_USER")
+PG_PASS = os.getenv("PG_PASS")
+PG_HOST = os.getenv("PG_HOST")
+PG_PORT = os.getenv("PG_PORT")
+DB_NAME = os.getenv("DB_NAME")
+API_URL = os.getenv("API_URL")
 SQL_QUERY = 'SELECT "accessToken", "refreshToken", "botName" FROM bot;'
 PG_CONN_STRING = f"postgresql://{PG_USER}:{PG_PASS}@{PG_HOST}:{PG_PORT}/{DB_NAME}"
 

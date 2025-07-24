@@ -155,11 +155,11 @@ STATIC_URL = "static/"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# Redis/Celery Configuration
+redis_base_url = os.getenv("REDIS_URL", "redis://redis:6379/5")
 if os.getenv("DISABLE_REDIS_SSL"):
-    REDIS_CELERY_URL = os.getenv("REDIS_URL") + "?ssl_cert_reqs=none"
+    REDIS_CELERY_URL = redis_base_url + "?ssl_cert_reqs=none"
 else:
-    REDIS_CELERY_URL = os.getenv("REDIS_URL")
+    REDIS_CELERY_URL = redis_base_url
 
 CELERY_BROKER_URL = REDIS_CELERY_URL
 CELERY_RESULT_BACKEND = REDIS_CELERY_URL

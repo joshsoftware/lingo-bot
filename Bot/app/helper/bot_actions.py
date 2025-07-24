@@ -4,6 +4,7 @@ import os
 
 def join_meeting_with_retry(meeting_url: str, bot_name: str):
     attendee_api_key = os.getenv("ATTENDEE_API_KEY")
+    JOIN_MEETING_URL=os.getenv("JOIN_MEETING_URL")
     headers={
         "Authorization": f"Token {attendee_api_key}",
         "Content-Type": "application/json"
@@ -11,7 +12,7 @@ def join_meeting_with_retry(meeting_url: str, bot_name: str):
     while True:
         print(f"Joining meeting: {meeting_url} with bot: {bot_name}")
         response = requests.post(
-            "http://localhost:8000/api/v1/bots",
+            JOIN_MEETING_URL,
             headers=headers,
             json={"meeting_url": meeting_url, "bot_name": bot_name}
         )
@@ -23,7 +24,7 @@ def join_meeting_with_retry(meeting_url: str, bot_name: str):
 
             while True:
                 status_response = requests.get(
-                    f"http://localhost:8000/api/v1/bots/{bot_id}",
+                    f"{JOIN_MEETING_URL}/{bot_id}",
                     headers=headers
                 )
                 status_data = status_response.json()

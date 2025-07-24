@@ -93,7 +93,10 @@ app.add_middleware(
 
 SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
 CLIENT_SECRETS_FILE = 'credentials.json'
-REDIRECT_URI = "http://localhost:8000/auth/google/callback"
+#REDIRECT_URI = "http://localhost:8000/auth/google/callback"
+REDIRECT_URI = os.getenv("REDIRECT_URIS")
+SCHEDULE_JOIN_BOT_URL = os.getenv("SCHEDULE_JOIN_BOT_URL")
+JOIN_MEETING_URL=os.getenv("JOIN_MEETING_URL")
 
 # OAuth setup
 OAUTH2_SCHEME = OAuth2AuthorizationCodeBearer(
@@ -175,7 +178,7 @@ def schedule_all_meetings(token: str = Depends(OAUTH2_SCHEME)):
 
             # Schedule the bot by calling the existing API
             response = requests.post(
-                "http://localhost:8001/schedule-join-bot",
+                SCHEDULE_JOIN_BOT_URL,
                 headers={"Content-Type": "application/json"},
                 json={
                     "meeting_url": meeting_url,
@@ -224,7 +227,7 @@ def schedule_join_bot(request: ScheduleBotRequest):
         while True:
             logger.info(f"Joining meeting: {meeting_url} with bot: {bot_name}")
             response = requests.post(
-                "http://localhost:8000/api/v1/bots",
+                JOIN_MEETING_URL,
                 headers=headers,
                 json={"meeting_url": meeting_url, "bot_name": bot_name}
             )
@@ -237,7 +240,7 @@ def schedule_join_bot(request: ScheduleBotRequest):
                 # Check bot status until success or meeting ends
                 while True:
                     status_response = requests.get(
-                        f"http://localhost:8000/api/v1/bots/{bot_id}",
+                        f"{JOIN_MEETING_URL}/{bot_id}",
                         headers=headers
                     )
                     status_data = status_response.json()

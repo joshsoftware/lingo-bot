@@ -9,6 +9,7 @@ from app.log_config import logger
 import os
 
 router = APIRouter(prefix="/scheduler", tags=["Scheduler"])
+JOIN_MEETING_URL = os.getenv("JOIN_MEETING_URL")
 
 
 def background_join_meeting(meeting_url, bot_name):
@@ -25,7 +26,7 @@ def join_meeting_with_retry(meeting_url, bot_name):
     while True:
         logger.info(f"Joining meeting: {meeting_url} with bot: {bot_name}")
         response = requests.post(
-            "http://attendee-attendee-app-local-1:8000/api/v1/bots",
+            JOIN_MEETING_URL,
             headers=headers,
             json={"meeting_url": meeting_url, "bot_name": bot_name}
         )
@@ -38,7 +39,7 @@ def join_meeting_with_retry(meeting_url, bot_name):
             # Check bot status until success or meeting ends
             while True:
                 status_response = requests.get(
-                    f"http://attendee-attendee-app-local-1:8000/api/v1/bots/{bot_id}",
+                    f"{JOIN_MEETING_URL}/{bot_id}",
                     headers=headers
                 )
                 status_data = status_response.json()
