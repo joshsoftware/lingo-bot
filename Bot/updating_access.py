@@ -13,9 +13,9 @@ PG_PORT = os.getenv("PG_PORT")
 DB_NAME = os.getenv("DB_NAME")
 SQL_QUERY = 'SELECT "accessToken", "refreshToken", "botName" FROM bot;'
 PG_CONN_STRING = f"postgresql://{PG_USER}:{PG_PASS}@{PG_HOST}:{PG_PORT}/{DB_NAME}"
-GOOGLE_TOKEN_URL = os.getenv("GOOGLE_TOKEN_URL")  # Google's token endpoint
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+GOOGLE_TOKEN_URL = os.getenv("TOKEN_URL")  # Google's token endpoint
+GOOGLE_CLIENT_ID = os.getenv("CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 
 # Setup basic logging
 logging.basicConfig(level=logging.INFO)

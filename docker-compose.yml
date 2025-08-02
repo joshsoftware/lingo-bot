@@ -28,7 +28,7 @@ services:
       - lingo_network
     restart: unless-stopped
     ports:
-      - "5433:5432"
+      - "5432:5432"
 
   # Lingo Bot FastAPI (Build at runtime)
   lingo-bot:
@@ -37,7 +37,7 @@ services:
       dockerfile: Dockerfile
     container_name: lingo-bot-app
     ports:
-      - "8101:8001"
+      - "8001:8001"
     depends_on:
       - redis
     environment:
@@ -50,43 +50,31 @@ services:
     restart: unless-stopped
 
   # Attendee Django application (Prebuilt image)
-  attendee-app:
-    image: selectus2/attendee-app:latest
-    container_name: attendee-app
+  attendee-worker-local:
+    build: ./attendee
     volumes:
-      - ./attendee:/attendee
+     - .:/attendee
     networks:
       - lingo_network
-    ports:
-      - "8100:8000"
-    depends_on:
-      - postgres
-      - redis
-    environment:
-      - POSTGRES_HOST=postgres
-      - REDIS_URL=redis://redis:6379/5
-      - DJANGO_SETTINGS_MODULE=attendee.settings.development
-    command: python manage.py runserver 0.0.0.0:8000
-    restart: unless-stopped
-
-  # Attendee Celery worker (Prebuilt image)
-  attendee-worker:
-    image: selectus2/attendee-worker:latest
-    container_name: attendee-worker
-    volumes:
-      - ./attendee:/attendee
-    networks:
-      - lingo_network
-    depends_on:
-      - postgres
-      - redis
-      - attendee-app
     environment:
       - POSTGRES_HOST=postgres
       - REDIS_URL=redis://redis:6379/5
       - DJANGO_SETTINGS_MODULE=attendee.settings.development
     command: celery -A attendee worker -l INFO
-    restart: unless-stopped
+
+  attendee-app-local:
+    build: ./attendee
+    volumes:
+     - .:/attendee
+    networks:
+      - lingo_network
+    ports:
+      - "8000:8000"
+    environment:
+      - POSTGRES_HOST=postgres
+      - REDIS_URL=redis://redis:6379/5
+      - DJANGO_SETTINGS_MODULE=attendee.settings.development
+    command: python manage.py runserver 0.0.0.0:8000
 
 networks:
   lingo_network:
