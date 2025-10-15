@@ -7,128 +7,21 @@ import threading
 import time
 from time import sleep
 
-import cv2
 import numpy as np
 import requests
-import undetected_chromedriver as uc
 from pyvirtualdisplay import Display
+from selenium import webdriver
 from websockets.sync.server import serve
 
+from bots.automatic_leave_configuration import AutomaticLeaveConfiguration
 from bots.bot_adapter import BotAdapter
-from bots.bot_controller.automatic_leave_configuration import AutomaticLeaveConfiguration
+from bots.models import ParticipantEventTypes, RecordingViews
+from bots.utils import half_ceil, scale_i420
 
-from .ui_methods import UiRequestToJoinDeniedException, UiRetryableException
+from .debug_screen_recorder import DebugScreenRecorder
+from .ui_methods import UiCouldNotJoinMeetingWaitingForHostException, UiCouldNotJoinMeetingWaitingRoomTimeoutException, UiIncorrectPasswordException, UiLoginAttemptFailedException, UiLoginRequiredException, UiMeetingNotFoundException, UiRequestToJoinDeniedException, UiRetryableException, UiRetryableExpectedException
 
 logger = logging.getLogger(__name__)
-
-
-def half_ceil(x):
-    return (x + 1) // 2
-
-
-def scale_i420(frame, frame_size, new_size):
-    """
-    Scales an I420 (YUV 4:2:0) frame from 'frame_size' to 'new_size',
-    handling odd frame widths/heights by using 'ceil' in the chroma planes.
-
-    :param frame:      A bytes object containing the raw I420 frame data.
-    :param frame_size: (orig_width, orig_height)
-    :param new_size:   (new_width, new_height)
-    :return:           A bytes object with the scaled I420 frame.
-    """
-
-    # 1) Unpack source / destination dimensions
-    orig_width, orig_height = frame_size
-    new_width, new_height = new_size
-
-    # 2) Compute source plane sizes with rounding up for chroma
-    orig_chroma_width = half_ceil(orig_width)
-    orig_chroma_height = half_ceil(orig_height)
-
-    y_plane_size = orig_width * orig_height
-    uv_plane_size = orig_chroma_width * orig_chroma_height  # for each U or V
-
-    # 3) Extract Y, U, V planes from the byte array
-    y = np.frombuffer(frame[0:y_plane_size], dtype=np.uint8)
-    u = np.frombuffer(frame[y_plane_size : y_plane_size + uv_plane_size], dtype=np.uint8)
-    v = np.frombuffer(
-        frame[y_plane_size + uv_plane_size : y_plane_size + 2 * uv_plane_size],
-        dtype=np.uint8,
-    )
-
-    # 4) Reshape planes
-    y = y.reshape(orig_height, orig_width)
-    u = u.reshape(orig_chroma_height, orig_chroma_width)
-    v = v.reshape(orig_chroma_height, orig_chroma_width)
-
-    # ---------------------------------------------------------
-    # Scale preserving aspect ratio or do letterbox/pillarbox
-    # ---------------------------------------------------------
-    input_aspect = orig_width / orig_height
-    output_aspect = new_width / new_height
-
-    if abs(input_aspect - output_aspect) < 1e-6:
-        # Same aspect ratio; do a straightforward resize
-        scaled_y = cv2.resize(y, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
-
-        # For U, V we should scale to half-dimensions (rounded up)
-        # of the new size. But OpenCV requires exact (int) dims, so:
-        target_u_width = half_ceil(new_width)
-        target_u_height = half_ceil(new_height)
-
-        scaled_u = cv2.resize(u, (target_u_width, target_u_height), interpolation=cv2.INTER_LINEAR)
-        scaled_v = cv2.resize(v, (target_u_width, target_u_height), interpolation=cv2.INTER_LINEAR)
-
-        # Flatten and return
-        return np.concatenate([scaled_y.flatten(), scaled_u.flatten(), scaled_v.flatten()]).astype(np.uint8).tobytes()
-
-    # Otherwise, the aspect ratios differ => letterbox or pillarbox
-    if input_aspect > output_aspect:
-        # The image is relatively wider => match width, shrink height
-        scaled_width = new_width
-        scaled_height = int(round(new_width / input_aspect))
-    else:
-        # The image is relatively taller => match height, shrink width
-        scaled_height = new_height
-        scaled_width = int(round(new_height * input_aspect))
-
-    # 5) Resize Y, U, and V to the scaled dimensions
-    scaled_y = cv2.resize(y, (scaled_width, scaled_height), interpolation=cv2.INTER_LINEAR)
-
-    # For U, V, use half-dimensions of the scaled result, rounding up.
-    scaled_u_width = half_ceil(scaled_width)
-    scaled_u_height = half_ceil(scaled_height)
-    scaled_u = cv2.resize(u, (scaled_u_width, scaled_u_height), interpolation=cv2.INTER_LINEAR)
-    scaled_v = cv2.resize(v, (scaled_u_width, scaled_u_height), interpolation=cv2.INTER_LINEAR)
-
-    # 6) Create the output buffers. For "dark" black:
-    #    Y=0, U=128, V=128.
-    final_y = np.zeros((new_height, new_width), dtype=np.uint8)
-    final_u = np.full((half_ceil(new_height), half_ceil(new_width)), 128, dtype=np.uint8)
-    final_v = np.full((half_ceil(new_height), half_ceil(new_width)), 128, dtype=np.uint8)
-
-    # 7) Compute centering offsets for each plane (Y first)
-    offset_y = (new_height - scaled_height) // 2
-    offset_x = (new_width - scaled_width) // 2
-
-    final_y[offset_y : offset_y + scaled_height, offset_x : offset_x + scaled_width] = scaled_y
-
-    # Offsets for U and V planes are half of the Y offsets (integer floor)
-    offset_y_uv = offset_y // 2
-    offset_x_uv = offset_x // 2
-
-    final_u[
-        offset_y_uv : offset_y_uv + scaled_u_height,
-        offset_x_uv : offset_x_uv + scaled_u_width,
-    ] = scaled_u
-    final_v[
-        offset_y_uv : offset_y_uv + scaled_u_height,
-        offset_x_uv : offset_x_uv + scaled_u_width,
-    ] = scaled_v
-
-    # 8) Flatten back to I420 layout and return bytes
-
-    return np.concatenate([final_y.flatten(), final_u.flatten(), final_v.flatten()]).astype(np.uint8).tobytes()
 
 
 class WebBotAdapter(BotAdapter):
@@ -140,20 +33,41 @@ class WebBotAdapter(BotAdapter):
         meeting_url,
         add_video_frame_callback,
         wants_any_video_frames_callback,
+        add_audio_chunk_callback,
         add_mixed_audio_chunk_callback,
+        add_encoded_mp4_chunk_callback,
         upsert_caption_callback,
+        upsert_chat_message_callback,
+        add_participant_event_callback,
         automatic_leave_configuration: AutomaticLeaveConfiguration,
+        recording_view: RecordingViews,
+        should_create_debug_recording: bool,
+        start_recording_screen_callback,
+        stop_recording_screen_callback,
+        video_frame_size: tuple[int, int],
+        voice_agent_url: str,
+        webpage_streamer_service_hostname: str,
+        record_chat_messages_when_paused: bool,
+        disable_incoming_video: bool,
     ):
         self.display_name = display_name
         self.send_message_callback = send_message_callback
+        self.add_audio_chunk_callback = add_audio_chunk_callback
         self.add_mixed_audio_chunk_callback = add_mixed_audio_chunk_callback
         self.add_video_frame_callback = add_video_frame_callback
         self.wants_any_video_frames_callback = wants_any_video_frames_callback
+        self.add_encoded_mp4_chunk_callback = add_encoded_mp4_chunk_callback
         self.upsert_caption_callback = upsert_caption_callback
-
+        self.upsert_chat_message_callback = upsert_chat_message_callback
+        self.add_participant_event_callback = add_participant_event_callback
+        self.start_recording_screen_callback = start_recording_screen_callback
+        self.stop_recording_screen_callback = stop_recording_screen_callback
+        self.recording_view = recording_view
+        self.record_chat_messages_when_paused = record_chat_messages_when_paused
+        self.disable_incoming_video = disable_incoming_video
         self.meeting_url = meeting_url
 
-        self.video_frame_size = (1920, 1080)
+        self.video_frame_size = video_frame_size
 
         self.driver = None
 
@@ -170,6 +84,7 @@ class WebBotAdapter(BotAdapter):
         self.last_media_message_processed_time = None
         self.last_audio_message_processed_time = None
         self.first_buffer_timestamp_ms_offset = time.time() * 1000
+        self.media_sending_enable_timestamp_ms = None
 
         self.participants_info = {}
         self.only_one_participant_in_meeting_at = None
@@ -177,17 +92,66 @@ class WebBotAdapter(BotAdapter):
 
         self.automatic_leave_configuration = automatic_leave_configuration
 
+        self.should_create_debug_recording = should_create_debug_recording
+        self.debug_screen_recorder = None
+
+        self.silence_detection_activated = False
+        self.joined_at = None
+        self.recording_permission_granted_at = None
+
+        self.ready_to_send_chat_messages = False
+
+        self.recording_paused = False
+
+        self.voice_agent_url = voice_agent_url
+        self.webpage_streamer_service_hostname = webpage_streamer_service_hostname
+
+        self.webpage_streamer_keepalive_task = None
+
+    def pause_recording(self):
+        self.recording_paused = True
+
+    def start_or_resume_recording(self):
+        self.recording_paused = False
+
+    def process_encoded_mp4_chunk(self, message):
+        if self.recording_paused:
+            return
+
+        self.last_media_message_processed_time = time.time()
+        if len(message) > 4:
+            encoded_mp4_data = message[4:]
+            logger.info(f"encoded mp4 data length {len(encoded_mp4_data)}")
+            self.add_encoded_mp4_chunk_callback(encoded_mp4_data)
+
     def get_participant(self, participant_id):
         if participant_id in self.participants_info:
             return {
                 "participant_uuid": participant_id,
                 "participant_full_name": self.participants_info[participant_id]["fullName"],
                 "participant_user_uuid": None,
+                "participant_is_the_bot": self.participants_info[participant_id]["isCurrentUser"],
+                "participant_is_host": self.participants_info[participant_id].get("isHost", False),
             }
 
         return None
 
+    def handle_participant_update(self, user):
+        user_before = self.participants_info.get(user["deviceId"], {"active": False})
+        self.participants_info[user["deviceId"]] = user
+
+        if user_before.get("active") and not user["active"]:
+            self.add_participant_event_callback({"participant_uuid": user["deviceId"], "event_type": ParticipantEventTypes.LEAVE, "event_data": {}, "timestamp_ms": int(time.time() * 1000)})
+            return
+
+        if not user_before.get("active") and user["active"]:
+            self.add_participant_event_callback({"participant_uuid": user["deviceId"], "event_type": ParticipantEventTypes.JOIN, "event_data": {}, "timestamp_ms": int(time.time() * 1000)})
+            return
+
     def process_video_frame(self, message):
+        if self.recording_paused:
+            return
+
         self.last_media_message_processed_time = time.time()
         if len(message) > 24:  # Minimum length check
             # Bytes 4-12 contain the timestamp
@@ -207,44 +171,100 @@ class WebBotAdapter(BotAdapter):
                 logger.info(f"video dimensions {width} {height} message length {len(message) - offset - 8}")
             self.video_frame_ticker += 1
 
-            # Scale frame to 1920x1080
+            # Scale frame to video frame size
             expected_video_data_length = width * height + 2 * half_ceil(width) * half_ceil(height)
             video_data = np.frombuffer(message[offset + 8 :], dtype=np.uint8)
 
             # Check if len(video_data) does not agree with width and height
             if len(video_data) == expected_video_data_length:  # I420 format uses 1.5 bytes per pixel
-                scaled_i420_frame = scale_i420(video_data, (width, height), (1920, 1080))
+                scaled_i420_frame = scale_i420(video_data, (width, height), self.video_frame_size)
                 if self.wants_any_video_frames_callback() and self.send_frames:
                     self.add_video_frame_callback(scaled_i420_frame, timestamp * 1000)
 
             else:
                 logger.info(f"video data length does not agree with width and height {len(video_data)} {width} {height}")
 
-    def process_audio_frame(self, message):
+    def process_mixed_audio_frame(self, message):
+        if self.recording_paused:
+            return
+
         self.last_media_message_processed_time = time.time()
         if len(message) > 12:
-            # Bytes 4-12 contain the timestamp
-            timestamp = int.from_bytes(message[4:12], byteorder="little")
-
-            # Bytes 12-16 contain the stream ID
-            stream_id = int.from_bytes(message[12:16], byteorder="little")
-
             # Convert the float32 audio data to numpy array
-            audio_data = np.frombuffer(message[16:], dtype=np.float32)
+            audio_data = np.frombuffer(message[4:], dtype=np.float32)
+
+            # Convert float32 to PCM 16-bit by multiplying by 32768.0
+            audio_data = (audio_data * 32768.0).astype(np.int16)
 
             # Only mark last_audio_message_processed_time if the audio data has at least one non-zero value
             if np.any(audio_data):
                 self.last_audio_message_processed_time = time.time()
 
-            if self.wants_any_video_frames_callback() and self.send_frames:
-                self.add_mixed_audio_chunk_callback(audio_data.tobytes(), timestamp * 1000, stream_id % 3)
+            if (self.wants_any_video_frames_callback is None or self.wants_any_video_frames_callback()) and self.send_frames:
+                self.add_mixed_audio_chunk_callback(chunk=audio_data.tobytes())
+
+    def process_per_participant_audio_frame(self, message):
+        if self.recording_paused:
+            return
+
+        self.last_media_message_processed_time = time.time()
+        if len(message) > 12:
+            # Byte 5 contains the participant ID length
+            participant_id_length = int.from_bytes(message[4:5], byteorder="little")
+            participant_id = message[5 : 5 + participant_id_length].decode("utf-8")
+
+            # Convert the float32 audio data to numpy array
+            audio_data = np.frombuffer(message[(5 + participant_id_length) :], dtype=np.float32)
+
+            # Convert float32 to PCM 16-bit by multiplying by 32768.0
+            audio_data = (audio_data * 32768.0).astype(np.int16)
+
+            self.add_audio_chunk_callback(participant_id, datetime.datetime.utcnow(), audio_data.tobytes())
+
+    def update_only_one_participant_in_meeting_at(self):
+        if not self.joined_at:
+            return
+
+        # If nobody other than the bot was ever in the meeting, then don't activate this. We only want to activate if someone else was in the meeting and left
+        if len(self.participants_info) <= 1:
+            return
+
+        all_participants_in_meeting = [x for x in self.participants_info.values() if x["active"]]
+        if len(all_participants_in_meeting) == 1 and all_participants_in_meeting[0]["fullName"] == self.display_name:
+            if self.only_one_participant_in_meeting_at is None:
+                self.only_one_participant_in_meeting_at = time.time()
+                logger.info(f"only_one_participant_in_meeting_at set to {self.only_one_participant_in_meeting_at}")
+        else:
+            self.only_one_participant_in_meeting_at = None
+
+    def handle_removed_from_meeting(self):
+        self.left_meeting = True
+        self.send_message_callback({"message": self.Messages.MEETING_ENDED})
+
+    def handle_meeting_ended(self):
+        self.left_meeting = True
+        self.send_message_callback({"message": self.Messages.MEETING_ENDED})
+
+    def handle_failed_to_join(self, reason):
+        logger.info(f"failed to join meeting with reason {reason}")
+        self.subclass_specific_handle_failed_to_join(reason)
+
+    def handle_caption_update(self, json_data):
+        if self.recording_paused:
+            return
+
+        # Count a caption as audio activity
+        self.last_audio_message_processed_time = time.time()
+        self.upsert_caption_callback(json_data["caption"])
+
+    def handle_chat_message(self, json_data):
+        if self.recording_paused and not self.record_chat_messages_when_paused:
+            return
+
+        self.upsert_chat_message_callback(json_data)
 
     def handle_websocket(self, websocket):
         audio_format = None
-        output_dir = "frames"  # Add output directory
-
-        # Create frames directory if it doesn't exist
-        os.makedirs(output_dir, exist_ok=True)
 
         try:
             for message in websocket:
@@ -262,40 +282,65 @@ class WebBotAdapter(BotAdapter):
                             logger.info(f"audio format {audio_format}")
 
                         elif json_data.get("type") == "CaptionUpdate":
-                            self.upsert_caption_callback(json_data["caption"])
+                            self.handle_caption_update(json_data)
+
+                        elif json_data.get("type") == "ChatMessage":
+                            self.handle_chat_message(json_data)
 
                         elif json_data.get("type") == "UsersUpdate":
                             for user in json_data["newUsers"]:
                                 user["active"] = user["humanized_status"] == "in_meeting"
-                                self.participants_info[user["deviceId"]] = user
+                                self.handle_participant_update(user)
                             for user in json_data["removedUsers"]:
                                 user["active"] = False
-                                self.participants_info[user["deviceId"]] = user
+                                self.handle_participant_update(user)
                             for user in json_data["updatedUsers"]:
                                 user["active"] = user["humanized_status"] == "in_meeting"
-                                self.participants_info[user["deviceId"]] = user
+                                self.handle_participant_update(user)
 
                                 if user["humanized_status"] == "removed_from_meeting" and user["fullName"] == self.display_name:
                                     # if this is the only participant with that name in the meeting, then we can assume that it was us who was removed
                                     if len([x for x in self.participants_info.values() if x["fullName"] == self.display_name]) == 1:
-                                        self.was_removed_from_meeting = True
-                                        self.send_message_callback({"message": self.Messages.MEETING_ENDED})
+                                        self.handle_removed_from_meeting()
 
-                            all_participants_in_meeting = [x for x in self.participants_info.values() if x["active"]]
-                            if len(all_participants_in_meeting) == 1 and all_participants_in_meeting[0]["fullName"] == self.display_name:
-                                if self.only_one_participant_in_meeting_at is None:
-                                    self.only_one_participant_in_meeting_at = time.time()
-                            else:
-                                self.only_one_participant_in_meeting_at = None
+                            self.update_only_one_participant_in_meeting_at()
+
+                        elif json_data.get("type") == "SilenceStatus":
+                            if not json_data.get("isSilent"):
+                                self.last_audio_message_processed_time = time.time()
+
+                        elif json_data.get("type") == "ChatStatusChange":
+                            if json_data.get("change") == "ready_to_send":
+                                self.send_message_callback({"message": self.Messages.READY_TO_SEND_CHAT_MESSAGE})
+                                self.ready_to_send_chat_messages = True
+
+                        elif json_data.get("type") == "MeetingStatusChange":
+                            if json_data.get("change") == "removed_from_meeting":
+                                self.handle_removed_from_meeting()
+                            if json_data.get("change") == "meeting_ended":
+                                self.handle_meeting_ended()
+                            if json_data.get("change") == "failed_to_join":
+                                self.handle_failed_to_join(json_data.get("reason"))
+
+                        elif json_data.get("type") == "RecordingPermissionChange":
+                            if json_data.get("change") == "granted":
+                                self.after_bot_can_record_meeting()
+                            elif json_data.get("change") == "denied":
+                                self.after_bot_recording_permission_denied()
 
                 elif message_type == 2:  # VIDEO
                     self.process_video_frame(message)
                 elif message_type == 3:  # AUDIO
-                    self.process_audio_frame(message)
+                    self.process_mixed_audio_frame(message)
+                elif message_type == 4:  # ENCODED_MP4_CHUNK
+                    self.process_encoded_mp4_chunk(message)
+                elif message_type == 5:  # PER_PARTICIPANT_AUDIO
+                    self.process_per_participant_audio_frame(message)
 
                 self.last_websocket_message_processed_time = time.time()
         except Exception as e:
             logger.info(f"Websocket error: {e}")
+            raise e
 
     def run_websocket_server(self):
         loop = asyncio.new_event_loop()
@@ -329,6 +374,18 @@ class WebBotAdapter(BotAdapter):
     def send_request_to_join_denied_message(self):
         self.send_message_callback({"message": self.Messages.REQUEST_TO_JOIN_DENIED})
 
+    def send_meeting_not_found_message(self):
+        self.send_message_callback({"message": self.Messages.MEETING_NOT_FOUND})
+
+    def send_login_required_message(self):
+        self.send_message_callback({"message": self.Messages.LOGIN_REQUIRED})
+
+    def send_login_attempt_failed_message(self):
+        self.send_message_callback({"message": self.Messages.LOGIN_ATTEMPT_FAILED})
+
+    def send_incorrect_password_message(self):
+        self.send_message_callback({"message": self.Messages.COULD_NOT_CONNECT_TO_MEETING})
+
     def send_debug_screenshot_message(self, step, exception, inner_exception):
         current_time = datetime.datetime.now()
         timestamp = current_time.strftime("%Y%m%d_%H%M%S")
@@ -339,11 +396,22 @@ class WebBotAdapter(BotAdapter):
             logger.info(f"Error saving screenshot: {e}")
             screenshot_path = None
 
+        mhtml_file_path = f"/tmp/page_snapshot_{timestamp}.mhtml"
+        try:
+            result = self.driver.execute_cdp_cmd("Page.captureSnapshot", {})
+            mhtml_bytes = result["data"]  # Extract the data from the response dictionary
+            with open(mhtml_file_path, "w", encoding="utf-8") as f:
+                f.write(mhtml_bytes)
+        except Exception as e:
+            logger.info(f"Error saving mhtml: {e}")
+            mhtml_file_path = None
+
         self.send_message_callback(
             {
                 "message": self.Messages.UI_ELEMENT_NOT_FOUND,
                 "step": step,
                 "current_time": current_time,
+                "mhtml_file_path": mhtml_file_path,
                 "screenshot_path": screenshot_path,
                 "exception_type": exception.__class__.__name__ if exception else "exception_not_available",
                 "exception_message": exception.__str__() if exception else "exception_message_not_available",
@@ -353,19 +421,33 @@ class WebBotAdapter(BotAdapter):
         )
 
     def init_driver(self):
-        log_path = "chromedriver.log"
+        options = webdriver.ChromeOptions()
 
-        options = uc.ChromeOptions()
-
+        options.add_argument("--autoplay-policy=no-user-gesture-required")
+        options.add_argument("--use-fake-device-for-media-stream")
         options.add_argument("--use-fake-ui-for-media-stream")
-        options.add_argument("--window-size=1920x1080")
-        options.add_argument("--no-sandbox")
+        options.add_argument(f"--window-size={self.video_frame_size[0]},{self.video_frame_size[1]}")
+        options.add_argument("--start-fullscreen")
         # options.add_argument('--headless=new')
         options.add_argument("--disable-gpu")
         options.add_argument("--disable-extensions")
         options.add_argument("--disable-application-cache")
-        options.add_argument("--disable-setuid-sandbox")
         options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+
+        if os.getenv("ENABLE_CHROME_SANDBOX", "false").lower() != "true":
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-setuid-sandbox")
+            logger.info("Chrome sandboxing is disabled")
+        else:
+            logger.info("Chrome sandboxing is enabled")
+
+        prefs = {
+            "credentials_enable_service": False,
+            "profile.password_manager_enabled": False,
+        }
+        options.add_experimental_option("prefs", prefs)
 
         if self.driver:
             # Simulate closing browser window
@@ -380,14 +462,10 @@ class WebBotAdapter(BotAdapter):
                 logger.info(f"Error closing existing driver: {e}")
             self.driver = None
 
-        self.driver = uc.Chrome(
-            service_log_path=log_path,
-            use_subprocess=True,
-            options=options,
-            version_main=133,
-        )
+        self.driver = webdriver.Chrome(options=options)
+        logger.info(f"web driver server initialized at port {self.driver.service.port}")
 
-        initial_data_code = f"window.initialData = {{websocketPort: {self.websocket_port}}}"
+        initial_data_code = f"window.initialData = {{websocketPort: {self.websocket_port}, videoFrameWidth: {self.video_frame_size[0]}, videoFrameHeight: {self.video_frame_size[1]}, botName: {json.dumps(self.display_name)}, addClickRipple: {'true' if self.should_create_debug_recording else 'false'}, recordingView: '{self.recording_view}', sendMixedAudio: {'true' if self.add_mixed_audio_chunk_callback else 'false'}, sendPerParticipantAudio: {'true' if self.add_audio_chunk_callback else 'false'}, collectCaptions: {'true' if self.upsert_caption_callback else 'false'}}}"
 
         # Define the CDN libraries needed
         CDN_LIBRARIES = ["https://cdnjs.cloudflare.com/ajax/libs/protobufjs/7.4.0/protobuf.min.js", "https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"]
@@ -410,6 +488,7 @@ class WebBotAdapter(BotAdapter):
         # Combine them ensuring libraries load first
         combined_code = f"""
             {initial_data_code}
+            {self.subclass_specific_initial_data_code()}
             {libraries_code}
             {payload_code}
         """
@@ -418,10 +497,16 @@ class WebBotAdapter(BotAdapter):
         self.driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {"source": combined_code})
 
     def init(self):
+        self.display_var_for_debug_recording = os.environ.get("DISPLAY")
         if os.environ.get("DISPLAY") is None:
             # Create virtual display only if no real display is available
-            display = Display(visible=0, size=(1920, 1080))
-            display.start()
+            self.display = Display(visible=0, size=(1930, 1090))
+            self.display.start()
+            self.display_var_for_debug_recording = self.display.new_display_var
+
+        if self.should_create_debug_recording:
+            self.debug_screen_recorder = DebugScreenRecorder(self.display_var_for_debug_recording, self.video_frame_size, BotAdapter.DEBUG_RECORDING_FILE_PATH)
+            self.debug_screen_recorder.start()
 
         # Start websocket server in a separate thread
         websocket_thread = threading.Thread(target=self.run_websocket_server, daemon=True)
@@ -437,8 +522,10 @@ class WebBotAdapter(BotAdapter):
     def repeatedly_attempt_to_join_meeting(self):
         logger.info(f"Trying to join meeting at {self.meeting_url}")
 
+        # Expected exceptions are ones that we expect to happen and are not a big deal, so we only increment num_retries once every three expected exceptions
+        num_expected_exceptions = 0
         num_retries = 0
-        max_retries = 2
+        max_retries = 3
         while num_retries <= max_retries:
             try:
                 self.init_driver()
@@ -446,9 +533,49 @@ class WebBotAdapter(BotAdapter):
                 logger.info("Successfully joined meeting")
                 break
 
+            except UiLoginRequiredException:
+                self.send_login_required_message()
+                return
+
+            except UiLoginAttemptFailedException:
+                self.send_login_attempt_failed_message()
+                return
+
             except UiRequestToJoinDeniedException:
                 self.send_request_to_join_denied_message()
                 return
+
+            except UiCouldNotJoinMeetingWaitingRoomTimeoutException:
+                self.send_message_callback({"message": self.Messages.LEAVE_MEETING_WAITING_ROOM_TIMEOUT_EXCEEDED})
+                return
+
+            except UiCouldNotJoinMeetingWaitingForHostException:
+                self.send_message_callback({"message": self.Messages.LEAVE_MEETING_WAITING_FOR_HOST})
+                return
+
+            except UiMeetingNotFoundException:
+                self.send_meeting_not_found_message()
+                return
+
+            except UiIncorrectPasswordException:
+                self.send_incorrect_password_message()
+                return
+
+            except UiRetryableExpectedException as e:
+                if num_retries >= max_retries:
+                    logger.info(f"Failed to join meeting and the {e.__class__.__name__} exception is retryable but the number of retries exceeded the limit and there were {num_expected_exceptions} expected exceptions, so returning")
+                    self.send_debug_screenshot_message(step=e.step, exception=e, inner_exception=e.inner_exception)
+                    return
+
+                num_expected_exceptions += 1
+                if num_expected_exceptions % 5 == 0:
+                    num_retries += 1
+                    logger.info(f"Failed to join meeting and the {e.__class__.__name__} exception is expected and {num_expected_exceptions} expected exceptions have occurred, so incrementing num_retries. This usually indicates that the meeting has not started yet, so we will wait for the configured amount of time which is 180 seconds before retrying")
+                    # We're going to start a new pod to see if that fixes the issue
+                    self.send_message_callback({"message": self.Messages.BLOCKED_BY_PLATFORM_REPEATEDLY})
+                    return
+                else:
+                    logger.info(f"Failed to join meeting and the {e.__class__.__name__} exception is expected so not incrementing num_retries, but {num_expected_exceptions} expected exceptions have occurred")
 
             except UiRetryableException as e:
                 if num_retries >= max_retries:
@@ -462,24 +589,62 @@ class WebBotAdapter(BotAdapter):
 
                 logger.info(f"Failed to join meeting and the {e.__class__.__name__} exception is retryable so retrying")
 
-            num_retries += 1
+                num_retries += 1
+
+            except Exception as e:
+                if num_retries >= max_retries:
+                    logger.exception(f"Failed to join meeting and the unexpected {e.__class__.__name__} exception with message {e.__str__()} is retryable but the number of retries exceeded the limit, so returning.")
+                    self.send_debug_screenshot_message(step="unknown", exception=e, inner_exception=None)
+                    return
+
+                if self.left_meeting or self.cleaned_up:
+                    logger.exception(f"Failed to join meeting and the unexpected {e.__class__.__name__} exception with message {e.__str__()} is retryable but the bot has left the meeting or cleaned up, so returning.")
+                    return
+
+                logger.exception(f"Failed to join meeting and the unexpected {e.__class__.__name__} exception with message {e.__str__()} is retryable so retrying")
+
+                num_retries += 1
+
             sleep(1)
 
-        # Trying making it smaller so GMeet sends smaller video frames
-        self.driver.set_window_size(1920 / 2, 1080 / 2)
+        self.after_bot_joined_meeting()
+        self.subclass_specific_after_bot_joined_meeting()
 
+    def after_bot_joined_meeting(self):
         self.send_message_callback({"message": self.Messages.BOT_JOINED_MEETING})
-        self.send_message_callback({"message": self.Messages.BOT_RECORDING_PERMISSION_GRANTED})
+        self.joined_at = time.time()
+        self.update_only_one_participant_in_meeting_at()
 
+    def after_bot_recording_permission_denied(self):
+        self.send_message_callback({"message": self.Messages.BOT_RECORDING_PERMISSION_DENIED, "denied_reason": BotAdapter.BOT_RECORDING_PERMISSION_DENIED_REASON.HOST_DENIED_PERMISSION})
+
+    def after_bot_can_record_meeting(self):
+        if self.recording_permission_granted_at is not None:
+            return
+
+        self.recording_permission_granted_at = time.time()
+        self.send_message_callback({"message": self.Messages.BOT_RECORDING_PERMISSION_GRANTED})
         self.send_frames = True
         self.driver.execute_script("window.ws?.enableMediaSending();")
         self.first_buffer_timestamp_ms_offset = self.driver.execute_script("return performance.timeOrigin;")
+
+        if self.start_recording_screen_callback:
+            sleep(2)
+            if self.debug_screen_recorder:
+                self.debug_screen_recorder.stop()
+            self.start_recording_screen_callback(self.display_var_for_debug_recording)
+
+        self.media_sending_enable_timestamp_ms = time.time() * 1000
+
+        self.start_streaming_from_webpage()
 
     def leave(self):
         if self.left_meeting:
             return
         if self.was_removed_from_meeting:
             return
+        if self.stop_recording_screen_callback:
+            self.stop_recording_screen_callback()
 
         try:
             logger.info("disable media sending")
@@ -492,7 +657,16 @@ class WebBotAdapter(BotAdapter):
             self.send_message_callback({"message": self.Messages.MEETING_ENDED})
             self.left_meeting = True
 
+    def abort_join_attempt(self):
+        try:
+            self.driver.close()
+        except Exception as e:
+            logger.info(f"Error closing driver: {e}")
+
     def cleanup(self):
+        if self.stop_recording_screen_callback:
+            self.stop_recording_screen_callback()
+
         try:
             logger.info("disable media sending")
             self.driver.execute_script("window.ws?.disableMediaSending();")
@@ -522,6 +696,9 @@ class WebBotAdapter(BotAdapter):
         except Exception as e:
             logger.info(f"Error during cleanup: {e}")
 
+        if self.debug_screen_recorder:
+            self.debug_screen_recorder.stop()
+
         # Properly shutdown the websocket server
         if self.websocket_server:
             try:
@@ -529,10 +706,11 @@ class WebBotAdapter(BotAdapter):
             except Exception as e:
                 logger.info(f"Error shutting down websocket server: {e}")
 
-        self.cleaned_up = True
+        # If we launched a webpage streamer, send a shutdown request
+        if self.voice_agent_url:
+            self.send_webpage_streamer_shutdown_request()
 
-    def get_first_buffer_timestamp_ms_offset(self):
-        return self.first_buffer_timestamp_ms_offset
+        self.cleaned_up = True
 
     def check_auto_leave_conditions(self) -> None:
         if self.left_meeting:
@@ -541,16 +719,139 @@ class WebBotAdapter(BotAdapter):
             return
 
         if self.only_one_participant_in_meeting_at is not None:
-            if time.time() - self.only_one_participant_in_meeting_at > self.automatic_leave_configuration.only_participant_in_meeting_threshold_seconds:
-                logger.info(f"Auto-leaving meeting because there was only one participant in the meeting for {self.automatic_leave_configuration.only_participant_in_meeting_threshold_seconds} seconds")
+            if time.time() - self.only_one_participant_in_meeting_at > self.automatic_leave_configuration.only_participant_in_meeting_timeout_seconds:
+                logger.info(f"Auto-leaving meeting because there was only one participant in the meeting for {self.automatic_leave_configuration.only_participant_in_meeting_timeout_seconds} seconds")
                 self.send_message_callback({"message": self.Messages.ADAPTER_REQUESTED_BOT_LEAVE_MEETING, "leave_reason": BotAdapter.LEAVE_REASON.AUTO_LEAVE_ONLY_PARTICIPANT_IN_MEETING})
                 return
 
-        if self.last_audio_message_processed_time is not None:
-            if time.time() - self.last_audio_message_processed_time > self.automatic_leave_configuration.silence_threshold_seconds:
-                logger.info(f"Auto-leaving meeting because there was no media message for {self.automatic_leave_configuration.silence_threshold_seconds} seconds")
+        if not self.silence_detection_activated and self.joined_at is not None and time.time() - self.joined_at > self.automatic_leave_configuration.silence_activate_after_seconds:
+            self.silence_detection_activated = True
+            self.last_audio_message_processed_time = time.time()
+            logger.info(f"Silence detection activated after {self.automatic_leave_configuration.silence_activate_after_seconds} seconds")
+
+        if self.last_audio_message_processed_time is not None and self.silence_detection_activated:
+            if time.time() - self.last_audio_message_processed_time > self.automatic_leave_configuration.silence_timeout_seconds:
+                logger.info(f"Auto-leaving meeting because there was no audio for {self.automatic_leave_configuration.silence_timeout_seconds} seconds")
                 self.send_message_callback({"message": self.Messages.ADAPTER_REQUESTED_BOT_LEAVE_MEETING, "leave_reason": BotAdapter.LEAVE_REASON.AUTO_LEAVE_SILENCE})
                 return
 
+        if self.joined_at is not None and self.automatic_leave_configuration.max_uptime_seconds is not None:
+            if time.time() - self.joined_at > self.automatic_leave_configuration.max_uptime_seconds:
+                logger.info(f"Auto-leaving meeting because bot has been running for more than {self.automatic_leave_configuration.max_uptime_seconds} seconds")
+                self.send_message_callback({"message": self.Messages.ADAPTER_REQUESTED_BOT_LEAVE_MEETING, "leave_reason": BotAdapter.LEAVE_REASON.AUTO_LEAVE_MAX_UPTIME})
+                return
+
+    def streaming_service_hostname(self):
+        # If we're running in k8s, the streaming service will be on another pod which is addressable using via a per-pod service
+        if os.getenv("LAUNCH_BOT_METHOD") == "kubernetes":
+            return f"{self.webpage_streamer_service_hostname}"
+        # Otherwise the streaming service will be running in a separate docker compose service, so we address it using the service name
+        return "attendee-webpage-streamer-local"
+
+    def send_webpage_streamer_keepalive_periodically(self):
+        """Send keepalive requests to the streaming service every 60 seconds."""
+        while not self.left_meeting and not self.cleaned_up:
+            try:
+                time.sleep(60)  # Wait 60 seconds between keepalive requests
+
+                if self.left_meeting or self.cleaned_up:
+                    break
+
+                response = requests.post(f"http://{self.streaming_service_hostname()}:8000/keepalive", json={})
+                logger.info(f"Webpage streamer keepalive response: {response.status_code}")
+
+            except Exception as e:
+                logger.info(f"Failed to send webpage streamer keepalive: {e}")
+                # Continue the loop even if a single keepalive fails
+
+        logger.info("Webpage streamer keepalive task stopped")
+
+    def send_webpage_streamer_shutdown_request(self):
+        try:
+            response = requests.post(f"http://{self.streaming_service_hostname()}:8000/shutdown", json={})
+            logger.info(f"Webpage streamer shutdown response: {response.json()}")
+        except Exception as e:
+            logger.info(f"Webpage streamer shutdown response: {e}")
+
+    def start_streaming_from_webpage(self):
+        if not self.voice_agent_url:
+            return
+
+        logger.info(f"Start streaming from webpage: {self.voice_agent_url}")
+        peerConnectionOffer = self.driver.execute_script("return window.botOutputManager.getBotOutputPeerConnectionOffer();")
+        logger.info(f"Peer connection offer: {peerConnectionOffer}")
+        if peerConnectionOffer.get("error"):
+            logger.error(f"Error getting peer connection offer: {peerConnectionOffer.get('error')}, returning")
+            return
+
+        offer_response = requests.post(f"http://{self.streaming_service_hostname()}:8000/offer", json={"sdp": peerConnectionOffer["sdp"], "type": peerConnectionOffer["type"]})
+        logger.info(f"Offer response: {offer_response.json()}")
+        self.driver.execute_script(f"window.botOutputManager.startBotOutputPeerConnection({json.dumps(offer_response.json())});")
+
+        start_streaming_response = requests.post(f"http://{self.streaming_service_hostname()}:8000/start_streaming", json={"url": self.voice_agent_url})
+        logger.info(f"Start streaming response: {start_streaming_response}")
+
+        if start_streaming_response.status_code != 200:
+            logger.info(f"Failed to start streaming, not starting webpage streamer keepalive task. Response: {start_streaming_response.status_code}")
+            return
+
+        # Start the keepalive task after successful streaming start
+        if self.webpage_streamer_keepalive_task is None or not self.webpage_streamer_keepalive_task.is_alive():
+            self.webpage_streamer_keepalive_task = threading.Thread(target=self.send_webpage_streamer_keepalive_periodically, daemon=True)
+            self.webpage_streamer_keepalive_task.start()
+
+    def ready_to_show_bot_image(self):
+        self.send_message_callback({"message": self.Messages.READY_TO_SHOW_BOT_IMAGE})
+
+    def get_first_buffer_timestamp_ms(self):
+        if self.media_sending_enable_timestamp_ms is None:
+            return None
+        # Doing a manual offset for now to correct for the screen recorder delay. This seems to work reliably.
+        return self.media_sending_enable_timestamp_ms
+
+    def send_raw_image(self, image_bytes):
+        # If we have a memoryview, convert it to bytes
+        if isinstance(image_bytes, memoryview):
+            image_bytes = image_bytes.tobytes()
+
+        # Pass the raw bytes directly to JavaScript
+        # The JavaScript side can convert it to appropriate format
+        self.driver.execute_script(
+            """
+            const bytes = new Uint8Array(arguments[0]);
+            window.botOutputManager.displayImage(bytes);
+        """,
+            list(image_bytes),
+        )
+
     def send_raw_audio(self, bytes, sample_rate):
-        logger.info("send_raw_audio not supported in google meet bots")
+        """
+        Sends raw audio bytes to the Google Meet call.
+
+        :param bytes: Raw audio bytes in PCM format
+        :param sample_rate: Sample rate of the audio in Hz
+        """
+        if not self.driver:
+            print("Cannot send audio - driver not initialized")
+            return
+
+        # Convert bytes to Int16Array for JavaScript
+        audio_data = np.frombuffer(bytes, dtype=np.int16).tolist()
+
+        # Call the JavaScript function to enqueue the PCM chunk
+        self.driver.execute_script(f"window.botOutputManager.playPCMAudio({audio_data}, {sample_rate})")
+
+    def send_chat_message(self, text):
+        logger.info("send_chat_message not supported in web bots")
+
+    # Sub-classes can override this to add class-specific initial data code
+    def subclass_specific_initial_data_code(self):
+        return ""
+
+    # Sub-classes can override this to add class-specific after bot joined meeting code
+    def subclass_specific_after_bot_joined_meeting(self):
+        pass
+
+    # Sub-classes can override this to handle class-specific failed to join issues
+    def subclass_specific_handle_failed_to_join(self, reason):
+        pass

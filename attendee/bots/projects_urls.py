@@ -6,6 +6,11 @@ app_name = "bots"
 
 urlpatterns = [
     path(
+        "create/",
+        projects_views.CreateProjectView.as_view(),
+        name="create-project",
+    ),
+    path(
         "<str:object_id>",
         projects_views.ProjectDashboardView.as_view(),
         name="project-dashboard",
@@ -16,14 +21,34 @@ urlpatterns = [
         name="project-bots",
     ),
     path(
+        "<str:object_id>/bots/create",
+        projects_views.CreateBotView.as_view(),
+        name="create-bot",
+    ),
+    path(
         "<str:object_id>/bots/<str:bot_object_id>",
         projects_views.ProjectBotDetailView.as_view(),
         name="project-bot-detail",
     ),
     path(
-        "<str:object_id>/settings",
-        projects_views.ProjectSettingsView.as_view(),
-        name="project-settings",
+        "<str:object_id>/bots/<str:bot_object_id>/recordings",
+        projects_views.ProjectBotRecordingsView.as_view(),
+        name="project-bot-recordings",
+    ),
+    path(
+        "<str:object_id>/credentials",
+        projects_views.ProjectCredentialsView.as_view(),
+        name="project-credentials",
+    ),
+    path(
+        "<str:object_id>/project",
+        projects_views.ProjectProjectView.as_view(),
+        name="project-project",
+    ),
+    path(
+        "<str:object_id>/edit",
+        projects_views.EditProjectView.as_view(),
+        name="project-edit",
     ),
     path(
         "<str:object_id>/keys",
@@ -44,6 +69,81 @@ urlpatterns = [
         "<str:object_id>/settings/credentials/",
         projects_views.CreateCredentialsView.as_view(),
         name="create-credentials",
+    ),
+    path(
+        "<str:object_id>/settings/credentials/delete/",
+        projects_views.DeleteCredentialsView.as_view(),
+        name="delete-credentials",
+    ),
+    path(
+        "<str:object_id>/webhooks/",
+        projects_views.ProjectWebhooksView.as_view(),
+        name="project-webhooks",
+    ),
+    path(
+        "<str:object_id>/webhooks/create/",
+        projects_views.CreateWebhookView.as_view(),
+        name="create-webhook",
+    ),
+    path(
+        "<str:object_id>/webhooks/<str:webhook_object_id>/delete/",
+        projects_views.DeleteWebhookView.as_view(),
+        name="delete-webhook",
+    ),
+    path(
+        "<str:object_id>/billing/",
+        projects_views.ProjectBillingView.as_view(),
+        name="project-billing",
+    ),
+    path(
+        "<str:object_id>/billing/checkout/",
+        projects_views.CreateCheckoutSessionView.as_view(),
+        name="create-checkout-session",
+    ),
+    path(
+        "<str:object_id>/billing/checkout/success/",
+        projects_views.CheckoutSuccessView.as_view(),
+        name="checkout-success",
+    ),
+    path(
+        "<str:object_id>/billing/autopay/",
+        projects_views.ProjectAutopayView.as_view(),
+        name="project-autopay",
+    ),
+    path(
+        "<str:object_id>/billing/autopay/stripe_portal/",
+        projects_views.ProjectAutopayStripePortalView.as_view(),
+        name="project-autopay-stripe-portal",
+    ),
+    path(
+        "<str:object_id>/team/",
+        projects_views.ProjectTeamView.as_view(),
+        name="project-team",
+    ),
+    path(
+        "<str:object_id>/team/invite/",
+        projects_views.InviteUserView.as_view(),
+        name="invite-user",
+    ),
+    path(
+        "<str:object_id>/team/users/edit",
+        projects_views.EditUserView.as_view(),
+        name="edit-user",
+    ),
+    path(
+        "<str:object_id>/calendars",
+        projects_views.ProjectCalendarsView.as_view(),
+        name="project-calendars",
+    ),
+    path(
+        "<str:object_id>/calendars/<str:calendar_object_id>",
+        projects_views.ProjectCalendarDetailView.as_view(),
+        name="project-calendar-detail",
+    ),
+    path(
+        "<str:object_id>/calendars/<str:calendar_object_id>/events/<str:event_object_id>",
+        projects_views.ProjectCalendarEventDetailView.as_view(),
+        name="project-calendar-event-detail",
     ),
     # Don't put anything after this, it will redirect to the dashboard
     path(

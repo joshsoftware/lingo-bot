@@ -1,12 +1,25 @@
-# Attendee: Meeting bots made easy
+<div align="center">
+<img src="static/images/logo_black_white.svg" width="300" alt="Attendee Logo">
+</div>
+<h2 align="center">Meeting bots made easy</h2>
+<p align="center">
+    <a href="https://docs.attendee.dev/">Documentation</a>
+    ·
+    <a href="https://attendee.dev/">Website</a>
+    ·
+    <a href="https://join.slack.com/t/attendeecommu-rff8300/shared_invite/zt-2uhpam6p2-ZzLAoVrljbL2UEjqdSHrgQ">Slack</a>
+</p>
+
 
 Attendee is an open source API for managing meeting bots on platforms like Zoom or Google Meet. Bring meeting transcripts and recordings into your product in days instead of months. 
 
-See a [quick demo of the API](https://www.loom.com/embed/b738d02aabf84f489f0bfbadf71605e3?sid=ea605ea9-8961-4cc3-9ba9-10b7dbbb8034), check out the [API reference](https://attendee.apidocumentation.com/) or join the [Slack Community](https://join.slack.com/t/attendeecommu-rff8300/shared_invite/zt-2uhpam6p2-ZzLAoVrljbL2UEjqdSHrgQ).
+See a [quick demo of the API](https://www.loom.com/embed/b738d02aabf84f489f0bfbadf71605e3?sid=ea605ea9-8961-4cc3-9ba9-10b7dbbb8034).
 
 ## Getting started
 
-Sign up for free on our hosted instance [here](https://app.attendee.dev/accounts/signup/).
+Sign up for free on our hosted instance [here](https://app.attendee.dev/accounts/signup/). 
+
+Interested in using Attendee at your company? Schedule a call [here](https://calendly.com/noah-attendee/30min). By self-hosting Attendee you can reduce costs by 10x compared to closed source vendors.
  
 ## Self hosting
 
@@ -71,15 +84,15 @@ To call the API you need the following
 
 1. Attendee API Key - These are created in the Attendee UI by creating an account in your Attendee instance, signing in and navigating to the 'API Keys' section in the sidebar.
 
-2. Zoom OAuth Credentials - These are the Zoom app client id and secret that uniquely identify your bot. We need these to join meetings. Directions on obtaining them [here](#obtaining-zoom-oauth-credentials).
+2. Zoom OAuth Credentials - Needed to join Zoom meetings. These are the Zoom app client id and secret that uniquely identify your bot. Directions on obtaining them [here](#obtaining-zoom-oauth-credentials).
 
-3. Deepgram API Key - We use Deepgram to generate recording transcripts. You can sign up for a free account [here](https://console.deepgram.com/signup), no credit card required.
+3. Deepgram API Key - Needed for transcribing Zoom meetings. You can sign up for an account [here](https://console.deepgram.com/signup), no credit card required and get 400 hours worth of free transcription.
 
 The Zoom OAuth credentials and Deepgram API key are entered into the Attendee UI in the 'Settings' section in the sidebar.
 
 ## Missing feature?
 
-Attendee is in very early beta, but functionality is being added rapidly. If the API is missing something you need, then open an issue in the repository. PRs are also welcome!
+We are rapidly adding features to Attendee. If the API is missing something you need, then open an issue in the repository or bring it up in the [Slack Community](https://join.slack.com/t/attendeecommu-rff8300/shared_invite/zt-2uhpam6p2-ZzLAoVrljbL2UEjqdSHrgQ). PRs are also welcome!
 
 ## Obtaining Zoom OAuth Credentials
 
@@ -94,7 +107,9 @@ For more details, follow [this guide](https://developers.zoom.us/docs/meeting-sd
 ## Running in development mode
 
 - Build the Docker image: `docker compose -f dev.docker-compose.yaml build` (Takes about 5 minutes)
-- Create local environment variables: `docker compose -f dev.docker-compose.yaml run --rm attendee-app-local python init_env.py > .env`
+- Create local environment variables
+  - **Linux/Mac**: `docker compose -f dev.docker-compose.yaml run --rm attendee-app-local python init_env.py > .env`
+  - **Windows**: `docker compose -f dev.docker-compose.yaml run --rm attendee-app-local python init_env.py | Out-File -Encoding utf8 .env` 
 - Edit the `.env` file and enter your AWS information.
 - Start all the services: `docker compose -f dev.docker-compose.yaml up`
 - After the services have started, run migrations in a separate terminal tab: `docker compose -f dev.docker-compose.yaml exec attendee-app-local python manage.py migrate`
@@ -106,7 +121,7 @@ For more details, follow [this guide](https://developers.zoom.us/docs/meeting-sd
 
 ## Contribute 
 
-Attendee is open source. TThe best way to contribute is to open an issue or join the [Slack Community](https://join.slack.com/t/attendeecommu-rff8300/shared_invite/zt-2uhpam6p2-ZzLAoVrljbL2UEjqdSHrgQ) and let us know what you want to build.
+Attendee is open source. The best way to contribute is to open an issue or join the [Slack Community](https://join.slack.com/t/attendeecommu-rff8300/shared_invite/zt-2uhpam6p2-ZzLAoVrljbL2UEjqdSHrgQ) and let us know what you want to build.
 
 See CONTRIBUTING.md for detailed instructions on how to contribute to Attendee.
 
@@ -118,12 +133,17 @@ See CONTRIBUTING.md for detailed instructions on how to contribute to Attendee.
 - [x] API Reference
 - [x] Audio input / output
 - [x] Video input / output
+- [x] Custom bot image 
 - [x] Google Meet support
 - [x] Speech support
-- [ ] Automatically leave meetings
-- [ ] [ZAK token](https://developers.zoom.us/docs/meeting-sdk/auth/#start-meetings-and-webinars-with-a-zoom-users-zak-token) and [Join token](https://developers.zoom.us/docs/api/meetings/#tag/meetings/GET/meetings/{meetingId}/jointoken/local_recording) support
-- [ ] Scheduled meetings
-- [ ] Webhooks for state changes
-- [ ] Microsoft Teams support
+- [x] Automatically leave meetings
+- [x] Microsoft Teams support
+- [x] Webhooks for state changes
+- [x] Scheduled meetings
+- [x] Audio input / output via websockets
+- [x] Attendee-Managed Calendar Integration
+- [x] [ZAK token](https://developers.zoom.us/docs/meeting-sdk/auth/#start-meetings-and-webinars-with-a-zoom-users-zak-token) and [Join token](https://developers.zoom.us/docs/api/meetings/#tag/meetings/GET/meetings/{meetingId}/jointoken/local_recording) support
+- [x] Stream video and audio from arbitrary website into meeting to support voice agents
+- [ ] Webex Support
 
 Have suggestions for the roadmap? Join the [Slack Community](https://join.slack.com/t/attendeecommu-rff8300/shared_invite/zt-2uhpam6p2-ZzLAoVrljbL2UEjqdSHrgQ) or open an issue.
