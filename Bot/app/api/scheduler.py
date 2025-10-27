@@ -12,6 +12,38 @@ router = APIRouter(prefix="/scheduler", tags=["Scheduler"])
 JOIN_MEETING_URL = os.getenv("JOIN_MEETING_URL")
 
 
+def is_meeting_scheduled(meeting_url: str) -> bool:
+    """Return True if a job for the given meeting_url is already scheduled.
+
+    We use the meeting_url as the job id (same convention used when adding jobs).
+    """
+    try:
+        job = scheduler.get_job(meeting_url)
+        return job is not None
+    except Exception:
+        # If scheduler backend doesn't support get_job or another error occurs,
+        # fall back to scanning jobs.
+        jobs = scheduler.get_jobs()
+        for job in jobs:
+            if job.id == meeting_url:
+                return True
+        return False
+
+
+def list_bot_upcoming_events():
+    """Return a list of upcoming scheduled jobs (id and next_run_time).
+
+    This is a lightweight helper for callers that want to show scheduled bot
+    joins.
+    """
+    events = []
+    jobs = scheduler.get_jobs()
+    for job in jobs:
+        # job.next_run_time may be a datetime or None; stringify for JSON safety
+        events.append({"id": job.id, "next_run_time": str(job.next_run_time)})
+    return events
+
+
 def background_join_meeting(meeting_url, bot_name):
     """Runs join logic in a separate thread."""
     thread = threading.Thread(target=join_meeting_with_retry, args=(meeting_url, bot_name))
@@ -66,8 +98,20 @@ async def schedule_join_bot(request: ScheduleBotRequest):
     meeting_end_time = request.meeting_end_time
 
 
+    # If a job for this meeting_url is already scheduled, skip creating another
+    if is_meeting_scheduled(meeting_url):
+        logger.info(f"Schedule request ignored: job for {meeting_url} already exists")
+        return {"message": "Job already scheduled", "meeting_url": meeting_url, "meeting_time": meeting_time, "meeting_end_time": meeting_end_time}
+
     # Schedule the job at the meeting time and keep retrying until meeting ends
-    scheduler.add_job(background_join_meeting, 'date', run_date=meeting_time, id=meeting_url, replace_existing=True, kwargs={"meeting_url": meeting_url, "bot_name": bot_name})
+    scheduler.add_job(
+        background_join_meeting,
+        'date',
+        run_date=meeting_time,
+        id=meeting_url,
+        replace_existing=True,
+        kwargs={"meeting_url": meeting_url, "bot_name": bot_name}
+    )
     return {"message": "Job scheduled", "meeting_url": meeting_url, "meeting_time": meeting_time, "meeting_end_time": meeting_end_time}
 
 
@@ -75,6 +119,15 @@ async def schedule_join_bot(request: ScheduleBotRequest):
 def get_scheduled_jobs():
     jobs = scheduler.get_jobs()
     return [job.id for job in jobs]
+
+
+@router.get("/upcoming-events")
+def upcoming_events():
+    """Return a list of upcoming scheduled bot join events.
+
+    Each item returns the job id and next_run_time.
+    """
+    return list_bot_upcoming_events()
 
 
 @router.delete("/stop-all-jobs")

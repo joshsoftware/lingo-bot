@@ -213,6 +213,7 @@ def stop_all_jobs():
 
 @app.post("/schedule-join-bot")
 def schedule_join_bot(request: ScheduleBotRequest):
+    # deprecated this is no used anymore
     meeting_url = request.meeting_url
     bot_name = request.bot_name
     meeting_time = request.meeting_time
