@@ -62,10 +62,8 @@ def get_meetings(body: ScheduleMeeting, token: str = Depends(OAUTH2_SCHEME)):
         singleEvents=True,
         orderBy='startTime'
     ).execute()
-    logger.info(f"{events_result}")
 
     events = events_result.get('items', [])
-    logger.info(f"events:         {events}")
     scheduled_meetings = []
 
     for event in events:
@@ -83,8 +81,19 @@ def get_meetings(body: ScheduleMeeting, token: str = Depends(OAUTH2_SCHEME)):
 
             logger.info(f"Scheduling bot for meeting '{title}' at {meeting_time}")
 
-            # Schedule the bot by calling the existing API
+            # Check with local scheduler helper if this meeting is already scheduled.
+            # Import at runtime to avoid circular imports during module initialization.
             try:
+                from app.api.scheduler import is_meeting_scheduled
+            except Exception:
+                is_meeting_scheduled = None
+
+            try:
+                if is_meeting_scheduled and is_meeting_scheduled(meeting_url):
+                    logger.info(f"Meeting {meeting_url} already scheduled, skipping POST")
+                    message = "Already scheduled"
+                else:
+                    # Schedule the bot by calling the existing API
                     response = requests.post(
                         SCHEDULE_JOIN_BOT_URL,
                         headers={"Content-Type": "application/json"},
@@ -95,10 +104,14 @@ def get_meetings(body: ScheduleMeeting, token: str = Depends(OAUTH2_SCHEME)):
                             "meeting_end_time": meeting_end_time
                         }
                     )
-                    message = response.json().get("message", "Failed")
+                    # If scheduler endpoint is unreachable or returns non-json, handle safely
+                    try:
+                        message = response.json().get("message", "Failed")
+                    except Exception:
+                        message = f"Failed with status {response.status_code}"
             except Exception as e:
-                    logger.error(f"Failed to schedule bot for '{title}': {e}")
-                    message = "Failed due to exception"
+                logger.error(f"Failed to schedule bot for '{title}': {e}")
+                message = "Failed due to exception"
 
             scheduled_meetings.append({
                 "title": title,
@@ -233,4 +246,3 @@ async def calendar_webhook(
     else:
         logger.warning("Token not found for channel_id.")
         return JSONResponse(status_code=404, content={"message": "Token not found"})
-

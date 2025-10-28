@@ -12,3 +12,5 @@ requests
 google-api-python-client
 boto3
 redis
+asyncpg
+aiohttp
