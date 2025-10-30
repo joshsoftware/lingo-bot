@@ -2,7 +2,11 @@ import requests
 import time
 import os
 
-def join_meeting_with_retry(meeting_url: str, bot_name: str):
+def join_meeting_with_retries(meeting_url: str, bot_name: str):
+    print("DEPRECATED FUNCTION - join_meeting_with_retry in bot_actions.py")
+    f = True
+    if f:
+        return
     attendee_api_key = os.getenv("ATTENDEE_API_KEY")
     JOIN_MEETING_URL=os.getenv("JOIN_MEETING_URL")
     headers={

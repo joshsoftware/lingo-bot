@@ -32,6 +32,7 @@ import datetime
 import os
 import time
 from app.log_config import logger
+import redis
 
 # app = FastAPI()
 # SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
@@ -198,6 +199,10 @@ def schedule_all_meetings(token: str = Depends(OAUTH2_SCHEME)):
 @app.on_event("shutdown")
 def shutdown_event():
     scheduler.shutdown()
+    # TODO CLEAN-UP redis data
+    # uncomment and test following lines to clear redis data on shutdown
+    # redis_client.delete(BOT_ADDED_IN_MEETING_KEY)
+    # redis_client.delete("meeting_states")
 
 @app.get("/scheduled-jobs")
 def get_scheduled_jobs():
@@ -213,55 +218,13 @@ def stop_all_jobs():
 
 @app.post("/schedule-join-bot")
 def schedule_join_bot(request: ScheduleBotRequest):
+    logger.info("[DEPRECATED]")
+    return
     meeting_url = request.meeting_url
     bot_name = request.bot_name
     meeting_time = request.meeting_time
     meeting_end_time = request.meeting_end_time
 
-    def join_meeting_with_retry():
-        attendee_api_key = os.getenv("ATTENDEE_API_KEY")
-        headers={
-            "Authorization": f"Token {attendee_api_key}",
-            "Content-Type": "application/json"
-        }
-        while True:
-            logger.info(f"Joining meeting: {meeting_url} with bot: {bot_name}")
-            response = requests.post(
-                JOIN_MEETING_URL,
-                headers=headers,
-                json={"meeting_url": meeting_url, "bot_name": bot_name}
-            )
-            logger.info(f"Join bot response: {response.status_code}, {response.text}")
-
-            if response.status_code == 201:
-                bot_id = response.json().get("id")
-                logger.info(f"Bot created with ID: {bot_id}")
-
-                # Check bot status until success or meeting ends
-                while True:
-                    status_response = requests.get(
-                        f"{JOIN_MEETING_URL}/{bot_id}",
-                        headers=headers
-                    )
-                    status_data = status_response.json()
-                    logger.info(f"Bot status: {status_data}")
-
-                    if status_data.get("state") in ["joined_recording", "joined"]:
-                        logger.info("Bot joined successfully")
-                        return
-                    elif status_data.get("state") == "fatal_error":
-                        logger.error("Bot failed to join. Retrying...")
-                        break
-
-                    logger.info("Retrying bot status check in 30 seconds...")
-                    time.sleep(30)
-
-            logger.info("Retrying bot join in 30 seconds...")
-            time.sleep(30)
-
-
-    # Schedule the job at the meeting time and keep retrying until meeting ends
-    scheduler.add_job(join_meeting_with_retry, 'date', run_date=meeting_time, id=meeting_url, replace_existing=True)
     return {"message": "Job scheduled", "meeting_url": meeting_url, "meeting_time": meeting_time, "meeting_end_time": meeting_end_time}
 
 

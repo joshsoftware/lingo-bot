@@ -20,14 +20,18 @@ CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 TOKEN_URI = os.getenv("TOKEN_URI")
 REDIRECT_URIS = os.getenv("REDIRECT_URIS")
+REDIS_HOST = os.getenv("REDIS_HOST", "redis")
+REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 
-redis_client = redis.Redis(host='redis', port=6379, db=0, decode_responses=True)
+redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=0, decode_responses=True)
+BOT_ADDED_IN_MEETING_KEY = "bot_added_in_meeting"
 
 router = APIRouter(prefix="/meetings", tags=["Meetings"])
 
 LINGO_API_URL = os.getenv("LINGO_API_URL")
 GET_MEETING_URL=os.getenv("GET_MEETING_URL")
 SCHEDULE_JOIN_BOT_URL=os.getenv("SCHEDULE_JOIN_BOT_URL")
+JOIN_METTING_BEFORE_IN_MINUTES = int(os.getenv("JOIN_METTING_BEFORE_IN_MINUTES", 2))  # default to 2 minutes
 
 class LingoRequest(BaseModel):
     key: str
@@ -48,11 +52,10 @@ def get_meetings(body: ScheduleMeeting, token: str = Depends(OAUTH2_SCHEME)):
         client_secret=CLIENT_SECRET
     )
 
-    logger.info(creds)
     service = build('calendar', 'v3', credentials=creds)
 
     now = datetime.datetime.utcnow().isoformat() + 'Z'
-    one_week_later = (datetime.datetime.utcnow() + datetime.timedelta(days=7)).isoformat() + 'Z'
+    one_week_later = (datetime.datetime.utcnow() + datetime.timedelta(days=1)).isoformat() + 'Z'
 
     events_result = service.events().list(
         calendarId='primary',
@@ -62,14 +65,21 @@ def get_meetings(body: ScheduleMeeting, token: str = Depends(OAUTH2_SCHEME)):
         singleEvents=True,
         orderBy='startTime'
     ).execute()
-    logger.info(f"{events_result}")
-
     events = events_result.get('items', [])
-    logger.info(f"events:         {events}")
     scheduled_meetings = []
-
+    meetings_map = {}
     for event in events:
         meeting_url = event.get('hangoutLink')
+
+        # check is bot request is aleady sent for the meeting
+        json_str = redis_client.get(BOT_ADDED_IN_MEETING_KEY)
+        if json_str:
+            meetings_map = json.loads(json_str)
+
+        if meetings_map.get(body.bot_name) == meeting_url:
+            logger.info(f" {meeting_url} is requested to be added by bot {body.bot_name} already scheduled. Skipping... ")
+            continue
+
         if meeting_url:
             title = event.get('summary', 'Unnamed Meeting')
             start_time = event['start'].get('dateTime')
@@ -81,8 +91,25 @@ def get_meetings(body: ScheduleMeeting, token: str = Depends(OAUTH2_SCHEME)):
             meeting_time = datetime.datetime.fromisoformat(start_time).strftime('%Y-%m-%dT%H:%M:%S')
             meeting_end_time = datetime.datetime.fromisoformat(end_time).strftime('%Y-%m-%dT%H:%M:%S')
 
-            logger.info(f"Scheduling bot for meeting '{title}' at {meeting_time}")
 
+            current_time = datetime.datetime.now()
+            meeting_datetime = datetime.datetime.fromisoformat(meeting_time.replace('Z', '+00:00'))
+            time_difference = abs((meeting_datetime - current_time).total_seconds() / 60)
+
+            # skipp the meeting if not within 2 minutes
+            if abs(time_difference) > JOIN_METTING_BEFORE_IN_MINUTES:
+                if meeting_datetime < current_time:
+                    logger.info(f"{title} at {meeting_datetime} is already past. Meeting skipped.")
+                else:
+                    logger.info(f"{title} at {meeting_datetime} is not within 2 minutes of current time. Skipping...")
+                continue
+
+            # set to map for bot has sent request to attendee api
+            bot_map = {}
+            bot_map[body.bot_name] = meeting_url
+            redis_client.set(BOT_ADDED_IN_MEETING_KEY, json.dumps(bot_map))
+
+            logger.info(f"Scheduling bot for upcoming meeting '{title}' at {meeting_time}")
             # Schedule the bot by calling the existing API
             try:
                     response = requests.post(
