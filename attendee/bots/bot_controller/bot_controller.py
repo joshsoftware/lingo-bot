@@ -442,9 +442,9 @@ class BotController:
             )
 
         return S3FileUploader(
-            bucket=settings.AWS_RECORDING_STORAGE_BUCKET_NAME,
+            bucket=os.environ.get('AWS_RECORDING_STORAGE_BUCKET_NAME'),
             filename=self.get_recording_filename(),
-            endpoint_url=settings.RECORDING_STORAGE_BACKEND.get("OPTIONS").get("endpoint_url"),
+            endpoint_url=os.environ.get('AWS_ENDPOINT_URL'),
         )
 
     def cleanup(self):
@@ -501,24 +501,13 @@ class BotController:
         if self.get_recording_file_location():
             self.upload_recording_to_external_media_storage_if_enabled()
             
-            external_media_storage_credentials_record = self.bot_in_db.project.credentials.filter(credential_type=Credentials.CredentialTypes.EXTERNAL_MEDIA_STORAGE).first()
-            if not external_media_storage_credentials_record:
-                logger.error(f"No external media storage credentials found for bot {self.bot_in_db.id}")
-                return
-
-            external_media_storage_credentials = external_media_storage_credentials_record.get_credentials()
-            if not external_media_storage_credentials:
-                logger.error(f"External media storage credentials data not found for bot {self.bot_in_db.id}")
-                return
-            
             file_key = self.get_recording_filename()
             file_uploader = S3FileUploader(
-                bucket=self.bot_in_db.external_media_storage_bucket_name(),
+                bucket=os.environ.get('AWS_RECORDING_STORAGE_BUCKET_NAME'),
                 filename=self.bot_in_db.external_media_storage_recording_file_name() or self.get_recording_filename(),
-                endpoint_url=external_media_storage_credentials.get("endpoint_url") or None,
-                region_name=external_media_storage_credentials.get("region_name"),
-                access_key_id=external_media_storage_credentials.get("access_key_id"),
-                access_key_secret=external_media_storage_credentials.get("access_key_secret"),
+                region_name=os.environ.get('AWS_REGION'),
+                access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
+                access_key_secret=os.environ.get('AWS_SECRET_ACCESS_KEY'),
             )
 
             logger.info("Telling file uploader to upload recording file...")
@@ -528,8 +517,8 @@ class BotController:
             logger.info("File uploader finished uploading file")
             file_uploader.delete_file(self.get_recording_file_location())
             logger.info("File uploader deleted file from local filesystem")
-            self.recording_file_saved(file_uploader.filename)
             self.call_lingo_callback(file_key)
+            self.recording_file_saved(file_key)
 
         if self.bot_in_db.create_debug_recording():
             self.save_debug_recording()
