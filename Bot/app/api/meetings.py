@@ -144,6 +144,7 @@ def call_to_lingo(request: LingoRequest):
     # import pdb; pdb.set_trace()
     logger.info(f"Call Recieved for {request.key}")
     presigned_url = generate_presigned_url(request.key)
+    logger.info(f"UMV GENERATED PRESIGNED URL : {presigned_url}")
     
     if not presigned_url:
         raise HTTPException(status_code=500, detail="Failed to generate presigned URL")
@@ -157,12 +158,16 @@ def call_to_lingo(request: LingoRequest):
     # Step 3: Call the Lingo API
     payload = {
         "documentUrl": file_url,
-        "documentName": "testing"
+        "documentName": os.path.basename(request.key)
     }
     
+    logger.info(f"UMV LINGO TRANSCRIBE payload : {payload}")
     logger.info("Call to /api/transcribe lingo api")
-    response = requests.post(f"{LINGO_API_URL}/api/transcribe", json=payload)
+    response = requests.post(f"{LINGO_API_URL}/api/transcribe", data=json.dumps(payload))
+    
     transcribe_response = response.json()
+    logger.info(f"UMV LINGO TRANSCRIBE response : {transcribe_response}")
+
 
     logger.info("Call to save transcription lingo api")
     save_transcription_response = save_transcription(response.json(), file_url, "testing")

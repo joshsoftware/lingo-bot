@@ -4,7 +4,8 @@ from .base import *
 
 DEBUG = True
 SITE_DOMAIN = "localhost:8000"
-ALLOWED_HOSTS = ["tendee-stripe-hooks.ngrok.io", "localhost"]
+#ALLOWED_HOSTS = ["tendee-stripe-hooks.ngrok.io", "localhost"]
+ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1,attendee-app-local").split(",")
 
 DATABASES = {
     "default": {

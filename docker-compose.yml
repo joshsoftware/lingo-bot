@@ -1,7 +1,9 @@
-version: '3.8'
+version: '3.9'
 
 services:
-  # Shared Redis service
+  # -----------------------------
+  # Redis (shared)
+  # -----------------------------
   redis:
     image: redis:7-alpine
     container_name: redis
@@ -11,27 +13,31 @@ services:
       - lingo_network
     restart: unless-stopped
     volumes:
-      - redis:/data/redis
+      - redis_data:/data/redis
 
-  # PostgreSQL for Attendee
-  postgres:
+  # -----------------------------
+  # PostgreSQL
+  # -----------------------------
+  postgres-attendee:
     image: postgres:15.3-alpine
     container_name: postgres-attendee
     environment:
       POSTGRES_DB: attendee_development
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: attendee_development_user
+      POSTGRES_PASSWORD: attendee_development_user
       PGDATA: /data/postgres
     volumes:
-      - postgres:/data/postgres
+      - postgres_data:/data/postgres
     networks:
       - lingo_network
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "5433:5433"
 
-  # Lingo Bot FastAPI (Build at runtime)
-  lingo-bot:
+  # -----------------------------
+  # Lingo Bot FastAPI app
+  # -----------------------------
+  lingo-bot-app:
     build:
       context: ./Bot
       dockerfile: Dockerfile
@@ -40,46 +46,127 @@ services:
       - "8001:8001"
     depends_on:
       - redis
+      - postgres-attendee
+      - attendee-app-local
     environment:
       - TZ=Asia/Kolkata
       - REDIS_URL=redis://redis:6379/0
     volumes:
       - ./Bot:/app
+    #command: python3 run.py
     networks:
       - lingo_network
     restart: unless-stopped
 
-  # Attendee Django application (Prebuilt image)
-  attendee-worker-local:
-    build: ./attendee
-    volumes:
-     - .:/attendee
-    networks:
-      - lingo_network
-    environment:
-      - POSTGRES_HOST=postgres
-      - REDIS_URL=redis://redis:6379/5
-      - DJANGO_SETTINGS_MODULE=attendee.settings.development
-    command: celery -A attendee worker -l INFO
-
+  # -----------------------------
+  # Attendee Web App
+  # -----------------------------
   attendee-app-local:
-    build: ./attendee
+    build:
+      context: ./attendee
+    container_name: attendee-app-local
     volumes:
-     - .:/attendee
+      - ./attendee:/attendee
     networks:
       - lingo_network
     ports:
-      - "8000:8000"
+      - "8002:8002"
     environment:
-      - POSTGRES_HOST=postgres
+      - POSTGRES_HOST=postgres-attendee
+      - POSTGRES_DB=attendee_development
+      - POSTGRES_USER=attendee_development_user
+      - POSTGRES_PASSWORD=attendee_development_user
       - REDIS_URL=redis://redis:6379/5
       - DJANGO_SETTINGS_MODULE=attendee.settings.development
-    command: python manage.py runserver 0.0.0.0:8000
+    command: python manage.py runserver 0.0.0.0:8002
+    depends_on:
+      - postgres-attendee
+      - redis
+    restart: unless-stopped
 
+  # -----------------------------
+  # Attendee Celery Worker
+  # -----------------------------
+  attendee-worker-local:
+    build: ./attendee
+    container_name: attendee-worker-local
+    volumes:
+      - ./attendee:/attendee
+    networks:
+      - lingo_network
+    environment:
+      - POSTGRES_HOST=postgres-attendee
+      - POSTGRES_DB=attendee_development
+      - POSTGRES_USER=attendee_development_user
+      - POSTGRES_PASSWORD=attendee_development_user
+      - REDIS_URL=redis://redis:6379/5
+      - DJANGO_SETTINGS_MODULE=attendee.settings.development
+    command: celery -A attendee worker -l INFO
+    depends_on:
+      - postgres-attendee
+      - redis
+    restart: unless-stopped
+
+  # -----------------------------
+  # Attendee Scheduler
+  # -----------------------------
+  attendee-scheduler-local:
+    build: ./attendee
+    container_name: attendee-scheduler-local
+    volumes:
+      - ./attendee:/attendee
+    networks:
+      - lingo_network
+    environment:
+      - POSTGRES_HOST=postgres-attendee
+      - POSTGRES_DB=attendee_development
+      - POSTGRES_USER=attendee_development_user
+      - POSTGRES_PASSWORD=attendee_development_user
+      - REDIS_URL=redis://redis:6379/5
+      - DJANGO_SETTINGS_MODULE=attendee.settings.development
+    command: celery -A attendee beat -l INFO --schedule /tmp/celerybeat-schedule
+    depends_on:
+      - postgres-attendee
+      - redis
+    restart: unless-stopped
+
+  # -----------------------------
+  # Attendee Webpage Streamer
+  # -----------------------------
+  attendee-webpage-streamer-local:
+    build: ./attendee
+    container_name: attendee-webpage-streamer-local
+    volumes:
+      - ./attendee:/attendee
+    networks:
+      - lingo_network
+    environment:
+      - POSTGRES_HOST=postgres-attendee
+      - POSTGRES_DB=attendee_development
+      - POSTGRES_USER=attendee_development_user
+      - POSTGRES_PASSWORD=attendee_development_user
+      - REDIS_URL=redis://redis:6379/5
+      - DJANGO_SETTINGS_MODULE=attendee.settings.development
+      - ENABLE_CHROME_SANDBOX=true
+    #ports:
+    #  - "8001:8000"
+    command: "python bots/webpage_streamer/run_webpage_streamer.py"
+    security_opt:
+      - seccomp=attendee/bots/web_bot_adapter/chrome_seccomp.json
+    depends_on:
+      - postgres-attendee
+      - redis
+    restart: unless-stopped
+    
+
+# -----------------------------
+# Networks and Volumes
+# -----------------------------
 networks:
   lingo_network:
+    name: lingo_network
     driver: bridge
 
 volumes:
-  postgres:
-  redis:
+  postgres_data:
+  redis_data:
