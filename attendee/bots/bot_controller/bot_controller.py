@@ -80,7 +80,7 @@ class BotController:
     UTTERANCE_TERMINATION_WAIT_TIME_SECONDS = 300
 
     def call_lingo_callback(self, file_key):
-        url = "http://lingo-bot:8001/meetings/call-to-lingo"
+        url = os.environ.get('LINGO_BOT_URL') + "/meetings/call-to-lingo"
         logger.info(os.environ.get('AWS_RECORDING_STORAGE_BUCKET_NAME'))
         payload = {"key": f"s3://{os.environ.get('AWS_RECORDING_STORAGE_BUCKET_NAME')}/{file_key}"}
         

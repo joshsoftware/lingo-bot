@@ -76,7 +76,7 @@ def get_meetings(body: ScheduleMeeting, token: str = Depends(OAUTH2_SCHEME)):
         if json_str:
             meetings_map = json.loads(json_str)
 
-        if meetings_map.get(body.bot_name) == meeting_url:
+        if meetings_map and meeting_url in meetings_map.get(body.bot_name):
             logger.info(f" {meeting_url} is requested to be added by bot {body.bot_name} already scheduled. Skipping... ")
             continue
 
@@ -105,8 +105,8 @@ def get_meetings(body: ScheduleMeeting, token: str = Depends(OAUTH2_SCHEME)):
                 continue
 
             # set to map for bot has sent request to attendee api
-            bot_map = {}
-            bot_map[body.bot_name] = meeting_url
+            bot_map = {body.bot_name: []}
+            bot_map[body.bot_name].append(meeting_url)
             redis_client.set(BOT_ADDED_IN_MEETING_KEY, json.dumps(bot_map))
 
             logger.info(f"Scheduling bot for upcoming meeting '{title}' at {meeting_time}")
@@ -170,7 +170,7 @@ def call_to_lingo(request: LingoRequest):
 
 
     logger.info("Call to save transcription lingo api")
-    save_transcription_response = save_transcription(response.json(), file_url, "testing")
+    save_transcription_response = save_transcription(response.json(), file_url, os.path.basename(request.key))
     
     if not save_transcription_response:
         raise HTTPException(status_code=500, detail="Failed to save transcription")

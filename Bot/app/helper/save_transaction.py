@@ -14,7 +14,8 @@ def save_transcription(response, document_url, document_name):
         "summary": response["summary"],
         "translation": response["translation"],
         "audioDuration": response.get("audioDuration", 0),  # Assuming you might add this later
-        "segments": response["segments"]
+        "segments": response["segments"],
+        "detectedLanguage": response["detected_language"]
     }
     
     logger.info(f"UMV : Payload for saving transcription: \n{payload}")
