@@ -1,10 +1,10 @@
 import requests
 import time
 import os
+from app.core.config import JOIN_MEETING_URL
 
 def join_meeting_with_retry(meeting_url: str, bot_name: str):
     attendee_api_key = os.getenv("ATTENDEE_API_KEY")
-    JOIN_MEETING_URL=os.getenv("JOIN_MEETING_URL")
     headers={
         "Authorization": f"Token {attendee_api_key}",
         "Content-Type": "application/json"

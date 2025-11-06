@@ -3,7 +3,19 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from app.core.config import OAUTH2_SCHEME
+from app.core.config import (
+    OAUTH2_SCHEME,
+    CLIENT_ID,
+    CLIENT_SECRET,
+    TOKEN_URI,
+    REDIS_HOST,
+    REDIS_PORT,
+    REDIS_DB,
+    LINGO_API_URL,
+    GET_MEETING_URL,
+    SCHEDULE_JOIN_BOT_URL,
+    WEBHOOK_ADDR
+)
 import datetime
 import requests
 from app.helper.generate_presigned_url import generate_presigned_url, extract_file_url
@@ -12,22 +24,10 @@ from app.log_config import logger
 import redis
 from uuid import uuid4
 import json
-from app.core import config
-import os
 
-# Now you can access the values like this:
-CLIENT_ID = os.getenv("CLIENT_ID")
-CLIENT_SECRET = os.getenv("CLIENT_SECRET")
-TOKEN_URI = os.getenv("TOKEN_URI")
-REDIRECT_URIS = os.getenv("REDIRECT_URIS")
-
-redis_client = redis.Redis(host='redis', port=6379, db=0, decode_responses=True)
+redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, decode_responses=True)
 
 router = APIRouter(prefix="/meetings", tags=["Meetings"])
-
-LINGO_API_URL = os.getenv("LINGO_API_URL")
-GET_MEETING_URL=os.getenv("GET_MEETING_URL")
-SCHEDULE_JOIN_BOT_URL=os.getenv("SCHEDULE_JOIN_BOT_URL")
 
 class LingoRequest(BaseModel):
     key: str
@@ -115,7 +115,7 @@ def get_meetings(body: ScheduleMeeting, token: str = Depends(OAUTH2_SCHEME)):
 @router.post("/call-to-lingo")
 def call_to_lingo(request: LingoRequest):
     # import pdb; pdb.set_trace()
-    logger.info(f"Call Recieved for {request.key}")
+    logger.info(f"Call Received for {request.key}")
     presigned_url = generate_presigned_url(request.key)
     
     if not presigned_url:
@@ -170,7 +170,7 @@ def watch_calendar(token: str = Depends(OAUTH2_SCHEME), refresh_token: str = Bod
     body = {
         "id": channel_id,
         "type": "web_hook",
-        "address": config.WEBHOOK_ADDR,  # your webhook receiver
+        "address": WEBHOOK_ADDR,  # your webhook receiver
         "params": {
             "ttl": "604800"
         },

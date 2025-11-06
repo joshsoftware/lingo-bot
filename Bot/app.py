@@ -1,14 +1,16 @@
-from fastapi import FastAPI, Depends, HTTPException
-from apscheduler.schedulers.background import BackgroundScheduler
-import requests
 import datetime
+import os
+import time
 import threading
-from google_auth_oauthlib.flow import Flow
+import requests
+from pydantic import BaseModel
+from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi.security import OAuth2AuthorizationCodeBearer
+from starlette.middleware.cors import CORSMiddleware
+from apscheduler.schedulers.background import BackgroundScheduler
+from google_auth_oauthlib.flow import Flow, InstalledAppFlow
 from google.auth.transport.requests import Request as GoogleRequest
 from google.oauth2.credentials import Credentials
-from fastapi.security import OAuth2AuthorizationCodeBearer
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -17,21 +19,18 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
-import datetime
-from pydantic import BaseModel  
 from helper import monitor_meeting, google_login
-from config import config
-from fastapi import FastAPI, Depends, HTTPException, Request
-from fastapi.security import OAuth2AuthorizationCodeBearer
-from google.auth.transport.requests import Request as GoogleRequest
-from google.oauth2.credentials import Credentials
-from starlette.middleware.cors import CORSMiddleware
-from google_auth_oauthlib.flow import Flow
-from googleapiclient.discovery import build
-import datetime
-import os
-import time
 from app.log_config import logger
+from app.core.config import (
+    SCOPES,
+    CLIENT_SECRETS_FILE,
+    REDIRECT_URI,
+    OAUTH2_SCHEME,
+    SCHEDULE_JOIN_BOT_URL,
+    JOIN_MEETING_URL,
+    BOT_SERVER_HOST,
+    BOT_SERVER_PORT
+)
 
 # app = FastAPI()
 # SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
@@ -91,18 +90,7 @@ app.add_middleware(
     allow_headers=["*"],  # Allows all headers
 )
 
-SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
-CLIENT_SECRETS_FILE = 'credentials.json'
-#REDIRECT_URI = "http://localhost:8000/auth/google/callback"
-REDIRECT_URI = os.getenv("REDIRECT_URIS")
-SCHEDULE_JOIN_BOT_URL = os.getenv("SCHEDULE_JOIN_BOT_URL")
-JOIN_MEETING_URL=os.getenv("JOIN_MEETING_URL")
-
-# OAuth setup
-OAUTH2_SCHEME = OAuth2AuthorizationCodeBearer(
-    tokenUrl="",
-    authorizationUrl="https://accounts.google.com/o/oauth2/auth"
-)
+# OAuth setup - using config from app.core.config
 
 scheduler = BackgroundScheduler()
 scheduler.start()
@@ -267,4 +255,4 @@ def schedule_join_bot(request: ScheduleBotRequest):
 
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    uvicorn.run(app, host=BOT_SERVER_HOST, port=BOT_SERVER_PORT)
