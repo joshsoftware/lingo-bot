@@ -115,7 +115,7 @@ def get_meetings(body: ScheduleMeeting, token: str = Depends(OAUTH2_SCHEME)):
 @router.post("/call-to-lingo")
 def call_to_lingo(request: LingoRequest):
     # import pdb; pdb.set_trace()
-    logger.info(f"Call Recieved for {request.key}")
+    logger.info(f"Call Received for {request.key}")
     presigned_url = generate_presigned_url(request.key)
     
     if not presigned_url:

@@ -1,14 +1,16 @@
-from fastapi import FastAPI, Depends, HTTPException
-from apscheduler.schedulers.background import BackgroundScheduler
-import requests
 import datetime
+import os
+import time
 import threading
-from google_auth_oauthlib.flow import Flow
+import requests
+from pydantic import BaseModel
+from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi.security import OAuth2AuthorizationCodeBearer
+from starlette.middleware.cors import CORSMiddleware
+from apscheduler.schedulers.background import BackgroundScheduler
+from google_auth_oauthlib.flow import Flow, InstalledAppFlow
 from google.auth.transport.requests import Request as GoogleRequest
 from google.oauth2.credentials import Credentials
-from fastapi.security import OAuth2AuthorizationCodeBearer
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -17,19 +19,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
-import datetime
-from pydantic import BaseModel  
 from helper import monitor_meeting, google_login
-from fastapi import FastAPI, Depends, HTTPException, Request
-from fastapi.security import OAuth2AuthorizationCodeBearer
-from google.auth.transport.requests import Request as GoogleRequest
-from google.oauth2.credentials import Credentials
-from starlette.middleware.cors import CORSMiddleware
-from google_auth_oauthlib.flow import Flow
-from googleapiclient.discovery import build
-import datetime
-import os
-import time
 from app.log_config import logger
 from app.core.config import (
     SCOPES,
