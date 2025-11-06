@@ -7,7 +7,6 @@ import requests
 import time
 import threading
 from app.log_config import logger
-import os
 
 router = APIRouter(prefix="/scheduler", tags=["Scheduler"])
 
