@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from app.core.scheduler import scheduler
 from app.helper.bot_actions import join_meeting_with_retry
 from app.models.schemas import ScheduleBotRequest
+from app.core.config import JOIN_MEETING_URL
 import requests
 import time
 import threading
@@ -9,7 +10,6 @@ from app.log_config import logger
 import os
 
 router = APIRouter(prefix="/scheduler", tags=["Scheduler"])
-JOIN_MEETING_URL = os.getenv("JOIN_MEETING_URL")
 
 
 def background_join_meeting(meeting_url, bot_name):
