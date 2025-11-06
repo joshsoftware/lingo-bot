@@ -20,14 +20,24 @@ GET_MEETING_URL = os.getenv("GET_MEETING_URL")
 LINGO_CALLBACK_URL = os.getenv("LINGO_CALLBACK_URL")
 LINGO_SAVE_TRANSCRIPTION_URL = os.getenv("LINGO_SAVE_TRANSCRIPTION_URL", "https://lingo.ai.joshsoftware.com/api/transcribe/save")
 
-# Redis Configuration
+# Redis Configuration with safe defaults
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
-REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
-REDIS_DB = int(os.getenv("REDIS_DB", "0"))
+try:
+    REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+except (ValueError, TypeError):
+    REDIS_PORT = 6379
 
-# Server Configuration
+try:
+    REDIS_DB = int(os.getenv("REDIS_DB", "0"))
+except (ValueError, TypeError):
+    REDIS_DB = 0
+
+# Server Configuration with safe defaults
 BOT_SERVER_HOST = os.getenv("BOT_SERVER_HOST", "0.0.0.0")
-BOT_SERVER_PORT = int(os.getenv("BOT_SERVER_PORT", "8001"))
+try:
+    BOT_SERVER_PORT = int(os.getenv("BOT_SERVER_PORT", "8001"))
+except (ValueError, TypeError):
+    BOT_SERVER_PORT = 8001
 
 # Google OAuth Credentials
 CLIENT_ID = os.getenv("CLIENT_ID")
