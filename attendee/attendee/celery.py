@@ -16,9 +16,6 @@ if os.getenv("DISABLE_REDIS_SSL"):
 else:
     app = Celery("attendee")
 
-
-
-
 # Load configuration from Django settings
 app.config_from_object("django.conf:settings", namespace="CELERY")
 

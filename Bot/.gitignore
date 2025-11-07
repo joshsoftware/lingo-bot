@@ -172,5 +172,4 @@ cython_debug/
 
 
 credentials.json
-config.py
 credentials.json
