@@ -9,7 +9,8 @@ def save_transcription(response, document_url, document_name):
     # import pdb; pdb.set_trace()
     payload = {
         "documentUrl": document_url,
-        "userID": config.USER_ID,
+        # fetch USER_ID from DB via config helper (fallback to env if present)
+        "userID": config.get_user_id(),
         "documentName": document_name,
         "summary": response["summary"],
         "translation": response["translation"],
@@ -25,6 +26,10 @@ def save_transcription(response, document_url, document_name):
     logger.info(f"UMV : Endpoint for saving transcription: {endpoint}")
     
     # Send the POST request
+    # If USER_ID is empty, warn (helps debugging when DB lookup failed)
+    if not payload.get("userID"):
+        logger.warning("USER_ID is empty in transcription payload; check DB fetch and configuration")
+
     try:
         res = requests.post(endpoint, data=json.dumps(payload))
         res.raise_for_status()  # Raise an exception for HTTP errors (4xx, 5xx)
