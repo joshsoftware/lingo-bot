@@ -69,6 +69,14 @@ from .video_output_manager import VideoOutputManager
 # from .file_uploader import FileUploader
 import requests
 
+
+
+REDIS_HOST = os.getenv("REDIS_HOST", "redis")
+REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=0, decode_responses=True)
+MEETING_DETAILS_KEY = "meeting_details"
+
+
 gi.require_version("GLib", "2.0")
 from gi.repository import GLib
 
@@ -79,10 +87,23 @@ class BotController:
     # Default wait time for utterance termination (5 minutes)
     UTTERANCE_TERMINATION_WAIT_TIME_SECONDS = 300
 
+    def get_meeting_detials(self, bot_name):
+        meetings_map = {}
+        json_str = redis_client.get(MEETING_DETAILS_KEY)
+        if json_str:
+            meetings_map = json.loads(json_str)
+
+        return meetings_map.get(bot_name)
+
     def call_lingo_callback(self, file_key):
         url = os.environ.get('LINGO_BOT_URL') + "/meetings/call-to-lingo"
-        logger.info(os.environ.get('AWS_RECORDING_STORAGE_BUCKET_NAME'))
-        payload = {"key": f"s3://{os.environ.get('AWS_RECORDING_STORAGE_BUCKET_NAME')}/{file_key}"}
+        data = self.get_meeting_detials(self.bot_in_db.name)
+        item = data[0]  # get the first dictionary
+        title = item['title']
+        date = item['meeting_time'].split('T')[0]  # take only the date part
+
+        meeting_details_str = f"{title}_{date}"
+        payload = {"key": f"s3://{os.environ.get('AWS_RECORDING_STORAGE_BUCKET_NAME')}/{file_key}", "meeting_details": meeting_details_str}
         
         def send_request():
             try:

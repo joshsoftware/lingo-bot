@@ -23,7 +23,6 @@ def save_transcription(response, document_url, document_name):
     # API endpoint
     #endpoint = "https://lingo.ai.joshsoftware.com/api/transcribe/save"
     endpoint = os.getenv("LINGO_API_URL") + "/api/transcribe/save"
-    logger.info(f"UMV : Endpoint for saving transcription: {endpoint}")
     
     # Send the POST request
     # If USER_ID is empty, warn (helps debugging when DB lookup failed)
