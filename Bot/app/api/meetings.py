@@ -25,6 +25,7 @@ REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 
 redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=0, decode_responses=True)
 BOT_ADDED_IN_MEETING_KEY = "bot_added_in_meeting"
+MEETING_DETAILS_KEY = "meeting_details"
 
 router = APIRouter(prefix="/meetings", tags=["Meetings"])
 
@@ -35,6 +36,7 @@ JOIN_METTING_BEFORE_IN_MINUTES = int(os.getenv("JOIN_METTING_BEFORE_IN_MINUTES",
 
 class LingoRequest(BaseModel):
     key: str
+    meeting_details: str
 
 class ScheduleMeeting(BaseModel):
     refresh_token: str
@@ -109,6 +111,10 @@ def get_meetings(body: ScheduleMeeting, token: str = Depends(OAUTH2_SCHEME)):
             bot_map[body.bot_name].append(meeting_url)
             redis_client.set(BOT_ADDED_IN_MEETING_KEY, json.dumps(bot_map))
 
+
+            meeting_details = {body.bot_name: []}
+            meeting_details[body.bot_name].append({"title": title,"meeting_time": meeting_time})
+            redis_client.set(MEETING_DETAILS_KEY, json.dumps(meeting_details))
             logger.info(f"Scheduling bot for upcoming meeting '{title}' at {meeting_time}")
             # Schedule the bot by calling the existing API
             try:
@@ -144,7 +150,6 @@ def call_to_lingo(request: LingoRequest):
     # import pdb; pdb.set_trace()
     logger.info(f"Call Recieved for {request.key}")
     presigned_url = generate_presigned_url(request.key)
-    logger.info(f"UMV GENERATED PRESIGNED URL : {presigned_url}")
     
     if not presigned_url:
         raise HTTPException(status_code=500, detail="Failed to generate presigned URL")
@@ -161,16 +166,13 @@ def call_to_lingo(request: LingoRequest):
         "documentName": os.path.basename(request.key)
     }
     
-    logger.info(f"UMV LINGO TRANSCRIBE payload : {payload}")
     logger.info("Call to /api/transcribe lingo api")
     response = requests.post(f"{LINGO_API_URL}/api/transcribe", data=json.dumps(payload))
     
     transcribe_response = response.json()
-    logger.info(f"UMV LINGO TRANSCRIBE response : {transcribe_response}")
 
 
-    logger.info("Call to save transcription lingo api")
-    save_transcription_response = save_transcription(response.json(), file_url, os.path.basename(request.key))
+    save_transcription_response = save_transcription(response.json(), file_url, request.meeting_details)
     
     if not save_transcription_response:
         raise HTTPException(status_code=500, detail="Failed to save transcription")
