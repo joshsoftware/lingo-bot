@@ -307,7 +307,7 @@ class WebpageStreamer:
         audio_device = "default"
         audio_format = "pulse"
 
-        port = 8000
+        port = 9000
 
         # Build players
         # Video options: set size + fps (many webcams accept these via v4l2)

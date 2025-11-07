@@ -3,7 +3,7 @@ import os
 from .base import *
 
 DEBUG = True
-SITE_DOMAIN = "localhost:8000"
+SITE_DOMAIN = "localhost:9000"
 ALLOWED_HOSTS = []
 
 DATABASES = {

@@ -1,7 +1,7 @@
 IMAGE_NAME = lingo-bot
 CONTAINER_NAME = lingo-bot
 NETWORK_NAME = attendee_attendee_network
-PORT = 8001
+PORT = 9001
 TZ = Asia/Kolkata
 
 .PHONY: build run logs

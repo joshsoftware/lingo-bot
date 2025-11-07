@@ -14,7 +14,7 @@ services:
       context: .
     container_name: fastapi-app
     ports:
-      - "8001:8001"
+      - "9001:9001"
     depends_on:
       - redis
     environment:

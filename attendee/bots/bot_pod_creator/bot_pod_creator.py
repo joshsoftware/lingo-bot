@@ -301,7 +301,7 @@ class BotPodCreator:
                     spec=client.V1ServiceSpec(
                         # Selector is used to connect the service to the streaming pod
                         selector={"app": "webpage-streamer", "bot-id": bot_name},
-                        ports=[client.V1ServicePort(name="http", port=8000, target_port=8000)],
+                        ports=[client.V1ServicePort(name="http", port=9000, target_port=9000)],
                         type="ClusterIP",
                     ),
                 )

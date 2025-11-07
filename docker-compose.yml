@@ -43,7 +43,7 @@ services:
       dockerfile: Dockerfile
     container_name: lingo-bot-app
     ports:
-      - "8001:8001"
+      - "9001:9001"
     depends_on:
       - redis
       - postgres-attendee
@@ -70,7 +70,7 @@ services:
     networks:
       - lingo_network
     ports:
-      - "8002:8002"
+      - "9002:9002"
     environment:
       - POSTGRES_HOST=postgres-attendee
       - POSTGRES_DB=attendee_development
@@ -78,7 +78,7 @@ services:
       - POSTGRES_PASSWORD=attendee_development_user
       - REDIS_URL=redis://redis:6379/5
       - DJANGO_SETTINGS_MODULE=attendee.settings.development
-    command: python manage.py runserver 0.0.0.0:8002
+    command: python manage.py runserver 0.0.0.0:9002
     depends_on:
       - postgres-attendee
       - redis
