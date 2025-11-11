@@ -1,10 +1,11 @@
 import os
 import redis
 from fastapi import FastAPI
-from app.api import auth, meetings, scheduler
+from app.api import auth, meetings, scheduler, internal
 from app.core.scheduler import scheduler as apscheduler
 from starlette.middleware.cors import CORSMiddleware
 from app.log_config import logger
+import app.core.config as config
 
 app = FastAPI()
 app.add_middleware(
@@ -30,6 +31,16 @@ def startup_event():
         apscheduler.start()
     else:
         logger.info("Scheduler already running.")
+    # Fetch and cache the bot USER_ID from the session table so it's available
+    # to other modules and so we log any DB connection issues at startup.
+    try:
+        uid = config.get_user_id()
+        if uid:
+            logger.info(f"Fetched USER_ID from DB: {uid}")
+        else:
+            logger.warning("Fetched empty USER_ID from DB; check DATABASE_URL and session table")
+    except Exception:
+        logger.exception("Error while fetching USER_ID on startup")
 
 @app.on_event("shutdown")
 def shutdown_event():
@@ -42,3 +53,4 @@ cleanup_redis_on_startup("bot_added_in_meeting")
 app.include_router(auth.router)
 app.include_router(meetings.router)
 app.include_router(scheduler.router)
+app.include_router(internal.router)
