@@ -50,6 +50,8 @@ services:
       - attendee-app-local
     environment:
       - TZ=Asia/Kolkata
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - REDIS_URL=redis://redis:6379/0
     volumes:
       - ./Bot:/app
@@ -78,6 +80,7 @@ services:
       - POSTGRES_PASSWORD=attendee_development_user
       - REDIS_URL=redis://redis:6379/5
       - DJANGO_SETTINGS_MODULE=attendee.settings.development
+      - ALLOWED_HOSTS=localhost,127.0.0.1,attendee-app-local
     command: python manage.py runserver 0.0.0.0:8002
     depends_on:
       - postgres-attendee
