@@ -14,6 +14,8 @@ from uuid import uuid4
 import json
 from app.core import config
 import os
+import re
+import html
 
 # Now you can access the values like this:
 CLIENT_ID = os.getenv("CLIENT_ID")
@@ -70,8 +72,47 @@ def get_meetings(body: ScheduleMeeting, token: str = Depends(OAUTH2_SCHEME)):
     events = events_result.get('items', [])
     scheduled_meetings = []
     meetings_map = {}
+    URL_RE = re.compile(r'https?://[^\s<>"\']+', re.IGNORECASE)
+
+    def extract_meeting_url_from_text(text: str):
+        if not text:
+            return None
+        # look for normal https links first
+        m = URL_RE.search(text)
+        if m:
+            return m.group(0).rstrip('>')
+        # fallback: scheme-less hosts like "zoom.us/j/..."
+        for pat in [r'(?:[\w.-]+\.)?zoom\.us/\S+', r'meet\.google\.com/\S+', r'teams\.microsoft\.com/\S+']:
+            m2 = re.search(pat, text, flags=re.IGNORECASE)
+            if m2:
+                candidate = m2.group(0)
+                if not candidate.lower().startswith('http'):
+                    candidate = 'https://' + candidate
+                return candidate
+        return None
+
     for event in events:
-        meeting_url = event.get('hangoutLink')
+        # Prefer structured conferenceData entryPoints (video) when available
+        meeting_url = None
+        conf = event.get('conferenceData')
+        if conf:
+            entry_points = conf.get('entryPoints', [])
+            for ep in entry_points:
+                if ep.get('entryPointType') == 'video' and ep.get('uri'):
+                    meeting_url = ep.get('uri')
+                    break
+        # fallbacks
+        if not meeting_url:
+            meeting_url = event.get('hangoutLink')
+        if not meeting_url:
+            # check location, description, summary for embedded links
+            for field in ('location', 'description', 'summary'):
+                val = event.get(field)
+                if val:
+                    val = html.unescape(val)
+                    meeting_url = extract_meeting_url_from_text(val)
+                    if meeting_url:
+                        break
 
         # check is bot request is aleady sent for the meeting
         json_str = redis_client.get(BOT_ADDED_IN_MEETING_KEY)
