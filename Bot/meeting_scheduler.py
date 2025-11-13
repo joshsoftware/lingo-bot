@@ -6,6 +6,7 @@ import aiohttp
 import logging
 from logging.handlers import RotatingFileHandler
 import os
+import json
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -35,10 +36,12 @@ logger.addHandler(handler)
 
 # Fetch access tokens asynchronously
 async def fetch_data():
+    logger.info(f"[DEBUG] fetch_data ....{PG_CONN_STRING} {SQL_QUERY} API_URL:{API_URL}")
     try:
         conn = await asyncpg.connect(PG_CONN_STRING)
         rows = await conn.fetch(SQL_QUERY)
         await conn.close()
+        logger.info(f"[DEBUG-CHECK] Fetched {len(rows)} rows from database. data : {json.dumps(rows)}")
         return [
             {
                 "access_token": row["accessToken"],
@@ -54,6 +57,7 @@ async def fetch_data():
 
 # Make one request
 async def make_request(session, data):
+    logger.info(f"make_request .... DATA : {data}")
     headers = {
         "Authorization": f"Bearer {data['access_token']}",
         "Content-Type": "application/json",
