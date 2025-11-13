@@ -41,7 +41,6 @@ async def fetch_data():
         conn = await asyncpg.connect(PG_CONN_STRING)
         rows = await conn.fetch(SQL_QUERY)
         await conn.close()
-        logger.info(f"[DEBUG-CHECK] Fetched {len(rows)} rows from database. data : {json.dumps(rows)}")
         return [
             {
                 "access_token": row["accessToken"],
@@ -57,7 +56,6 @@ async def fetch_data():
 
 # Make one request
 async def make_request(session, data):
-    logger.info(f"make_request .... DATA : {data}")
     headers = {
         "Authorization": f"Bearer {data['access_token']}",
         "Content-Type": "application/json",
