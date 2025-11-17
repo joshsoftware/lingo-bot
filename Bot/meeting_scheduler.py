@@ -36,7 +36,6 @@ logger.addHandler(handler)
 
 # Fetch access tokens asynchronously
 async def fetch_data():
-    logger.info(f"[DEBUG] fetch_data ....{PG_CONN_STRING} {SQL_QUERY} API_URL:{API_URL}")
     try:
         conn = await asyncpg.connect(PG_CONN_STRING)
         rows = await conn.fetch(SQL_QUERY)
