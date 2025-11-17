@@ -18,7 +18,7 @@ PG_HOST = os.getenv("PG_HOST")
 PG_PORT = os.getenv("PG_PORT")
 DB_NAME = os.getenv("DB_NAME")
 API_URL = os.getenv("API_URL")
-SQL_QUERY = 'SELECT "accessToken", "refreshToken", "botName" FROM bot;'
+SQL_QUERY = 'SELECT "accessToken", "refreshToken", "botName", "user_id" FROM bot;'
 PG_CONN_STRING = f"postgresql://{PG_USER}:{PG_PASS}@{PG_HOST}:{PG_PORT}/{DB_NAME}"
 
 os.makedirs('logs', exist_ok=True)
