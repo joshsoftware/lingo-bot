@@ -72,24 +72,65 @@ def get_meetings(body: ScheduleMeeting, token: str = Depends(OAUTH2_SCHEME)):
     events = events_result.get('items', [])
     scheduled_meetings = []
     meetings_map = {}
-    URL_RE = re.compile(r'https?://[^\s<>"\']+', re.IGNORECASE)
+    # Try to import the canonical extraction logic from the attendee package.
+    # In some deployment setups the `attendee` package may not be on sys.path
+    # (separate services). Fall back to a local implementation that mirrors
+    # the attendee behaviour and will attempt to use meeting_type_from_url if
+    # that helper is importable.
+    try:
+        from attendee.bots.tasks.sync_calendar_task import extract_meeting_url_from_text  # type: ignore
+    except Exception:
+        try:
+            # Try alternative import path used in the attendee codebase
+            from bots.tasks.sync_calendar_task import extract_meeting_url_from_text  # type: ignore
+        except Exception:
+            # Fallback implementation copied from attendee/bots/tasks/sync_calendar_task.py
+            from typing import Optional
 
-    def extract_meeting_url_from_text(text: str):
-        if not text:
-            return None
-        # look for normal https links first
-        m = URL_RE.search(text)
-        if m:
-            return m.group(0).rstrip('>')
-        # fallback: scheme-less hosts like "zoom.us/j/..."
-        for pat in [r'(?:[\w.-]+\.)?zoom\.us/\S+', r'meet\.google\.com/\S+', r'teams\.microsoft\.com/\S+']:
-            m2 = re.search(pat, text, flags=re.IGNORECASE)
-            if m2:
-                candidate = m2.group(0)
-                if not candidate.lower().startswith('http'):
-                    candidate = 'https://' + candidate
-                return candidate
-        return None
+            URL_CANDIDATE = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
+
+            try:
+                # Prefer to reuse meeting_type_from_url when available
+                from bots.meeting_url_utils import meeting_type_from_url  # type: ignore
+            except Exception:
+                try:
+                    from attendee.bots.meeting_url_utils import meeting_type_from_url  # type: ignore
+                except Exception:
+                    # Last-resort: accept any url (best-effort)
+                    def meeting_type_from_url(url: str):
+                        return True
+
+            def extract_meeting_url_from_text(text: str) -> Optional[str]:
+                if not text:
+                    return None
+                # First pass: look for normal https:// links (case-insensitive)
+                for m in URL_CANDIDATE.finditer(text):
+                    url = m.group(0).rstrip(").,;]}")
+                    # strip trailing '>' that sometimes remains from markdown/angle-bracket wrapping
+                    url = url.rstrip('>')
+                    try:
+                        if meeting_type_from_url(url):
+                            return url
+                    except Exception:
+                        return url
+
+                # Fallback: links without scheme (e.g., "zoom.us/j/12345") or mixed-case scheme
+                scheme_less_patterns = [
+                    r"(?:[\w.-]+\.)?zoom\.us/[^\s<>\"']+",
+                    r"meet\.google\.com/[^\s<>\"']+",
+                    r"teams\.microsoft\.com/[^\s<>\"']+",
+                ]
+                for pat in scheme_less_patterns:
+                    for m in re.finditer(pat, text, flags=re.IGNORECASE):
+                        candidate = m.group(0)
+                        if not candidate.lower().startswith("http"):
+                            candidate = "https://" + candidate
+                        try:
+                            if meeting_type_from_url(candidate):
+                                return candidate
+                        except Exception:
+                            return candidate
+                return None
 
     for event in events:
         # Prefer structured conferenceData entryPoints (video) when available
@@ -114,7 +155,7 @@ def get_meetings(body: ScheduleMeeting, token: str = Depends(OAUTH2_SCHEME)):
                     if meeting_url:
                         break
 
-        # check is bot request is aleady sent for the meeting
+        # check is bot request is already sent for the meeting
         json_str = redis_client.get(BOT_ADDED_IN_MEETING_KEY)
         if json_str:
             meetings_map = json.loads(json_str)
