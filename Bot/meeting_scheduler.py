@@ -45,6 +45,7 @@ async def fetch_data():
                 "access_token": row["accessToken"],
                 "refresh_token": row["refreshToken"],
                 "bot_name": row["botName"],
+                "user_id": row["user_id"],
             }
             for row in rows
         ]
@@ -59,7 +60,7 @@ async def make_request(session, data):
         "Authorization": f"Bearer {data['access_token']}",
         "Content-Type": "application/json",
     }
-    body = {"refresh_token": data["refresh_token"], "bot_name": data["bot_name"]}
+    body = {"refresh_token": data["refresh_token"], "bot_name": data["bot_name"], "user_id": data["user_id"]}
     try:
         async with session.get(
             API_URL, headers=headers, json=body, timeout=10
