@@ -25,6 +25,7 @@ from .models import (
     AsyncTranscription,
     AsyncTranscriptionStates,
     Bot,
+    ApiKey,
     BotEventManager,
     BotEventSubTypes,
     BotEventTypes,
@@ -1512,3 +1513,49 @@ class ParticipantsView(GenericAPIView):
 
         except Bot.DoesNotExist:
             return Response({"error": "Bot not found"}, status=status.HTTP_404_NOT_FOUND)
+
+import uuid
+from accounts.models import Organization
+from bots.models import Project, ApiKey
+
+class BotApiKeyView(APIView):
+    def create_project_and_api_key(self, org_name=None, project_name=None, api_key_name=None):
+        """Create organization, project, and API key with optional random names"""
+        # Generate random names if not provided
+        # TODO - create one time while adding bot
+        unique_suffix = str(uuid.uuid4())[:8]
+        org_name = org_name or f"org_auto_gen{unique_suffix}"
+        project_name = project_name or f"project_auto_gen{unique_suffix}"
+        api_key_name = api_key_name or f"key_auto_gen{unique_suffix}"
+
+        # Create organization
+        organization = Organization.objects.create(
+            name=org_name,
+            centicredits=10000,
+            is_async_transcription_enabled=True
+        )
+        # Create project
+        project = Project.objects.create(
+            name=project_name,
+            organization=organization
+        )
+        # Create API key and get plaintext
+        api_key_obj, api_key_plain = ApiKey.create(
+            project=project,
+            name=api_key_name
+        )
+        return api_key_plain
+
+    def get(self, request, bot_name):
+        try:
+            # Generate API key with random org, project, and key names
+            attendee_api_key = self.create_project_and_api_key()
+            logging.info(f"Generated new attendee API key for bot '{bot_name}': {attendee_api_key}")
+
+            return Response({
+                "api_key": attendee_api_key,
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logging.error(f"Error retrieving API key for bot '{bot_name}': {str(e)}", exc_info=True)
+            return Response({"error": "Failed to retrieve API key"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

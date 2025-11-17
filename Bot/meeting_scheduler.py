@@ -6,6 +6,7 @@ import aiohttp
 import logging
 from logging.handlers import RotatingFileHandler
 import os
+import json
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -17,7 +18,7 @@ PG_HOST = os.getenv("PG_HOST")
 PG_PORT = os.getenv("PG_PORT")
 DB_NAME = os.getenv("DB_NAME")
 API_URL = os.getenv("API_URL")
-SQL_QUERY = 'SELECT "accessToken", "refreshToken", "botName" FROM bot;'
+SQL_QUERY = 'SELECT "accessToken", "refreshToken", "botName", "user_id" FROM bot;'
 PG_CONN_STRING = f"postgresql://{PG_USER}:{PG_PASS}@{PG_HOST}:{PG_PORT}/{DB_NAME}"
 
 os.makedirs('logs', exist_ok=True)
@@ -44,6 +45,7 @@ async def fetch_data():
                 "access_token": row["accessToken"],
                 "refresh_token": row["refreshToken"],
                 "bot_name": row["botName"],
+                "user_id": row["user_id"],
             }
             for row in rows
         ]
@@ -58,7 +60,7 @@ async def make_request(session, data):
         "Authorization": f"Bearer {data['access_token']}",
         "Content-Type": "application/json",
     }
-    body = {"refresh_token": data["refresh_token"], "bot_name": data["bot_name"]}
+    body = {"refresh_token": data["refresh_token"], "bot_name": data["bot_name"], "user_id": data["user_id"]}
     try:
         async with session.get(
             API_URL, headers=headers, json=body, timeout=10

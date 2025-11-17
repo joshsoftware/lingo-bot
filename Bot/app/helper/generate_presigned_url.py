@@ -42,6 +42,5 @@ def extract_file_url(presigned_url):
     base_url = decoded_url.split('?')[0]
 
     # Remove 's3://bucket-name/' pattern if present
-    clean_url = base_url.replace(f"s3://{AWS_RECORDING_STORAGE_BUCKET_NAME}/", "")
-
+    clean_url = base_url.replace(f"s3://{AWS_RECORDING_STORAGE_BUCKET_NAME}/", f"{AWS_RECORDING_STORAGE_BUCKET_NAME}/", 1)
     return clean_url

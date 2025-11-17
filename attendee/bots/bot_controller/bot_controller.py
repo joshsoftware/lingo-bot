@@ -100,10 +100,11 @@ class BotController:
         data = self.get_meeting_detials(self.bot_in_db.name)
         item = data[0]  # get the first dictionary
         title = item['title']
+        user_id = item['user_id']
         date = item['meeting_time'].split('T')[0]  # take only the date part
 
         meeting_details_str = f"{title}_{date}"
-        payload = {"key": f"s3://{os.environ.get('AWS_RECORDING_STORAGE_BUCKET_NAME')}/{file_key}", "meeting_details": meeting_details_str}
+        payload = {"key": f"s3://{os.environ.get('AWS_RECORDING_STORAGE_BUCKET_NAME')}/{file_key}", "meeting_details": meeting_details_str, "user_id": user_id}
         
         def send_request():
             try:

@@ -37,10 +37,12 @@ JOIN_METTING_BEFORE_IN_MINUTES = int(os.getenv("JOIN_METTING_BEFORE_IN_MINUTES",
 class LingoRequest(BaseModel):
     key: str
     meeting_details: str
+    user_id: str
 
 class ScheduleMeeting(BaseModel):
     refresh_token: str
     bot_name: str
+    user_id: str
 
 
 @router.get("/")
@@ -113,7 +115,7 @@ def get_meetings(body: ScheduleMeeting, token: str = Depends(OAUTH2_SCHEME)):
 
 
             meeting_details = {body.bot_name: []}
-            meeting_details[body.bot_name].append({"title": title,"meeting_time": meeting_time})
+            meeting_details[body.bot_name].append({"title": title,"meeting_time": meeting_time, "user_id": body.user_id})
             redis_client.set(MEETING_DETAILS_KEY, json.dumps(meeting_details))
             logger.info(f"Scheduling bot for upcoming meeting '{title}' at {meeting_time}")
             # Schedule the bot by calling the existing API
@@ -172,7 +174,7 @@ def call_to_lingo(request: LingoRequest):
     transcribe_response = response.json()
 
 
-    save_transcription_response = save_transcription(response.json(), file_url, request.meeting_details)
+    save_transcription_response = save_transcription(response.json(), file_url, request.meeting_details, request.user_id)
     
     if not save_transcription_response:
         raise HTTPException(status_code=500, detail="Failed to save transcription")

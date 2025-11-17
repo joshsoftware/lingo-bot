@@ -4,13 +4,12 @@ import json
 import app.core.config as config
 from app.log_config import logger
 
-def save_transcription(response, document_url, document_name):
+def save_transcription(response, document_url, document_name, user_id):
     # Prepare the payload
     # import pdb; pdb.set_trace()
     payload = {
         "documentUrl": document_url,
-        # fetch USER_ID from DB via config helper (fallback to env if present)
-        "userID": config.get_user_id(),
+        "userID": user_id,
         "documentName": document_name,
         "summary": response["summary"],
         "translation": response["translation"],
