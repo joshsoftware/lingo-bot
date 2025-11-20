@@ -155,7 +155,8 @@ services:
     #  - "8001:8000"
     command: "python bots/webpage_streamer/run_webpage_streamer.py"
     security_opt:
-      - seccomp=attendee/bots/web_bot_adapter/chrome_seccomp.json
+      # - seccomp=attendee/bots/web_bot_adapter/chrome_seccomp.json
+      - seccomp:unconfined
     depends_on:
       - postgres-attendee
       - redis

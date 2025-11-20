@@ -14,6 +14,8 @@ from uuid import uuid4
 import json
 from app.core import config
 import os
+import re
+import html
 
 # Now you can access the values like this:
 CLIENT_ID = os.getenv("CLIENT_ID")
@@ -72,10 +74,90 @@ def get_meetings(body: ScheduleMeeting, token: str = Depends(OAUTH2_SCHEME)):
     events = events_result.get('items', [])
     scheduled_meetings = []
     meetings_map = {}
-    for event in events:
-        meeting_url = event.get('hangoutLink')
+    # Try to import the canonical extraction logic from the attendee package.
+    # In some deployment setups the `attendee` package may not be on sys.path
+    # (separate services). Fall back to a local implementation that mirrors
+    # the attendee behaviour and will attempt to use meeting_type_from_url if
+    # that helper is importable.
+    try:
+        from attendee.bots.tasks.sync_calendar_task import extract_meeting_url_from_text  # type: ignore
+    except Exception:
+        try:
+            # Try alternative import path used in the attendee codebase
+            from bots.tasks.sync_calendar_task import extract_meeting_url_from_text  # type: ignore
+        except Exception:
+            # Fallback implementation copied from attendee/bots/tasks/sync_calendar_task.py
+            from typing import Optional
 
-        # check is bot request is aleady sent for the meeting
+            URL_CANDIDATE = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
+
+            try:
+                # Prefer to reuse meeting_type_from_url and the canonical patterns when available
+                from bots.meeting_url_utils import meeting_type_from_url, SCHEME_LESS_PATTERNS  # type: ignore
+            except Exception:
+                try:
+                    from attendee.bots.meeting_url_utils import meeting_type_from_url, SCHEME_LESS_PATTERNS  # type: ignore
+                except Exception:
+                    # Last-resort: accept any url (best-effort) and provide default patterns
+                    def meeting_type_from_url(url: str):
+                        return True
+                    SCHEME_LESS_PATTERNS = [
+                        r"(?:[\w.-]+\.)?zoom\.us/[^\s<>\"']+",
+                        r"meet\.google\.com/[^\s<>\"']+",
+                        r"teams\.microsoft\.com/[^\s<>\"']+",
+                    ]
+
+            def extract_meeting_url_from_text(text: str) -> Optional[str]:
+                if not text:
+                    return None
+                # First pass: look for normal https:// links (case-insensitive)
+                for m in URL_CANDIDATE.finditer(text):
+                    url = m.group(0).rstrip(").,;]}")
+                    # strip trailing '>' that sometimes remains from markdown/angle-bracket wrapping
+                    url = url.rstrip('>')
+                    try:
+                        if meeting_type_from_url(url):
+                            return url
+                    except Exception:
+                        return url
+
+                # Fallback: links without scheme (e.g., "zoom.us/j/12345") or mixed-case scheme
+                for pat in SCHEME_LESS_PATTERNS:
+                    for m in re.finditer(pat, text, flags=re.IGNORECASE):
+                        candidate = m.group(0)
+                        if not candidate.lower().startswith("http"):
+                            candidate = "https://" + candidate
+                        try:
+                            if meeting_type_from_url(candidate):
+                                return candidate
+                        except Exception:
+                            return candidate
+                return None
+
+    for event in events:
+        # Prefer structured conferenceData entryPoints (video) when available
+        meeting_url = None
+        conf = event.get('conferenceData')
+        if conf:
+            entry_points = conf.get('entryPoints', [])
+            for ep in entry_points:
+                if ep.get('entryPointType') == 'video' and ep.get('uri'):
+                    meeting_url = ep.get('uri')
+                    break
+        # fallbacks
+        if not meeting_url:
+            meeting_url = event.get('hangoutLink')
+        if not meeting_url:
+            # check location, description, summary for embedded links
+            for field in ('location', 'description', 'summary'):
+                val = event.get(field)
+                if val:
+                    val = html.unescape(val)
+                    meeting_url = extract_meeting_url_from_text(val)
+                    if meeting_url:
+                        break
+
+        # check is bot request is already sent for the meeting
         json_str = redis_client.get(BOT_ADDED_IN_MEETING_KEY)
         if json_str:
             meetings_map = json.loads(json_str)

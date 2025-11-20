@@ -7,6 +7,7 @@ from typing import Dict, List, Optional
 from zoneinfo import ZoneInfo
 
 import dateutil.parser
+import html
 import requests
 from celery import shared_task
 from django.db import transaction
@@ -14,23 +15,36 @@ from django.utils import timezone
 
 from bots.bots_api_utils import delete_bot, patch_bot
 from bots.calendars_api_utils import remove_bots_from_calendar
-from bots.meeting_url_utils import meeting_type_from_url
+from bots.meeting_url_utils import meeting_type_from_url, SCHEME_LESS_PATTERNS
 from bots.models import Bot, BotStates, Calendar, CalendarEvent, CalendarPlatform, CalendarStates, WebhookTriggerTypes
 from bots.webhook_payloads import calendar_webhook_payload
 from bots.webhook_utils import trigger_webhook
 
 logger = logging.getLogger(__name__)
 
-URL_CANDIDATE = re.compile(r"https?://[^\s<>\"']+")
+URL_CANDIDATE = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
 
 
 def extract_meeting_url_from_text(text: str) -> Optional[str]:
     if not text:
         return None
+    # First pass: look for normal https:// links (case-insensitive)
     for m in URL_CANDIDATE.finditer(text):
-        url = m.group(0).rstrip(").,;]}>")
+        url = m.group(0).rstrip(").,;]}")
+        # strip trailing '>' that sometimes remains from markdown/angle-bracket wrapping
+        url = url.rstrip('>')
         if meeting_type_from_url(url):
             return url
+
+    # Fallback: links without scheme (e.g., "zoom.us/j/12345") or mixed-case scheme
+    # Try to find common meeting host patterns and prepend https:// when detected
+    for pat in SCHEME_LESS_PATTERNS:
+        for m in re.finditer(pat, text, flags=re.IGNORECASE):
+            candidate = m.group(0)
+            if not candidate.lower().startswith("http"):
+                candidate = "https://" + candidate
+            if meeting_type_from_url(candidate):
+                return candidate
     return None
 
 
@@ -457,13 +471,86 @@ class GoogleCalendarSyncHandler(CalendarSyncHandler):
 
         # Extract meeting URL if present
         meeting_url_from_conference_data = None
+        entry_points = []
         if "conferenceData" in google_event:
             entry_points = google_event["conferenceData"].get("entryPoints", [])
             for entry_point in entry_points:
                 if entry_point.get("entryPointType") == "video":
                     meeting_url_from_conference_data = entry_point.get("uri")
                     break
-        meeting_url = extract_meeting_url_from_text(meeting_url_from_conference_data) or extract_meeting_url_from_text(google_event.get("hangoutLink")) or extract_meeting_url_from_text(google_event.get("location")) or extract_meeting_url_from_text(google_event.get("description")) or extract_meeting_url_from_text(google_event.get("summary"))
+
+        # Normalize/unescape free-text fields before extraction
+        hangout_link = google_event.get("hangoutLink")
+        location_text = google_event.get("location")
+        description_text = google_event.get("description")
+        summary_text = google_event.get("summary")
+
+        if description_text:
+            description_text = html.unescape(description_text)
+        if location_text:
+            location_text = html.unescape(location_text)
+        if summary_text:
+            summary_text = html.unescape(summary_text)
+
+        meeting_url = None
+        meeting_url_source = None
+
+        # Check in order and record the source field for logging
+        if meeting_url_from_conference_data:
+            meeting_url = extract_meeting_url_from_text(meeting_url_from_conference_data)
+            if meeting_url:
+                meeting_url_source = "conferenceData.entryPoints"
+
+        if not meeting_url and hangout_link:
+            meeting_url = extract_meeting_url_from_text(hangout_link)
+            if meeting_url:
+                meeting_url_source = "hangoutLink"
+
+        if not meeting_url and location_text:
+            meeting_url = extract_meeting_url_from_text(location_text)
+            if meeting_url:
+                meeting_url_source = "location"
+
+        if not meeting_url and description_text:
+            meeting_url = extract_meeting_url_from_text(description_text)
+            if meeting_url:
+                meeting_url_source = "description"
+
+        if not meeting_url and summary_text:
+            meeting_url = extract_meeting_url_from_text(summary_text)
+            if meeting_url:
+                meeting_url_source = "summary"
+
+        # Loose fallback: try to detect scheme-less Zoom/Meet/Teams links inside text
+        if not meeting_url:
+            # Try entry points liberally (some providers set non-standard URIs)
+            if entry_points:
+                for ep in entry_points:
+                    uri = ep.get("uri")
+                    if uri:
+                        candidate = uri
+                        if not candidate.lower().startswith("http"):
+                            candidate = "https://" + candidate
+                        if meeting_type_from_url(candidate):
+                            meeting_url = extract_meeting_url_from_text(candidate) or candidate
+                            meeting_url_source = "conferenceData.entryPoints.loose"
+                            break
+
+            # Try scheme-less patterns in text fields
+            if not meeting_url:
+                loose_text = "\n".join(filter(None, [location_text, description_text, summary_text]))
+                if loose_text:
+                    # common patterns
+                    m = re.search(r"(?:[\w.-]+\.)?zoom\.us/\S+", loose_text, flags=re.IGNORECASE)
+                    if m:
+                        candidate = m.group(0)
+                        if not candidate.lower().startswith("http"):
+                            candidate = "https://" + candidate
+                        if meeting_type_from_url(candidate):
+                            meeting_url = candidate
+                            meeting_url_source = "loose_text_zoom"
+
+        logger.debug("Event %s: extracted meeting_url=%s source=%s", google_event.get("id"), meeting_url, meeting_url_source)
 
         # Extract attendees
         attendees = []
