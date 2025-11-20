@@ -15,7 +15,7 @@ from django.utils import timezone
 
 from bots.bots_api_utils import delete_bot, patch_bot
 from bots.calendars_api_utils import remove_bots_from_calendar
-from bots.meeting_url_utils import meeting_type_from_url
+from bots.meeting_url_utils import meeting_type_from_url, SCHEME_LESS_PATTERNS
 from bots.models import Bot, BotStates, Calendar, CalendarEvent, CalendarPlatform, CalendarStates, WebhookTriggerTypes
 from bots.webhook_payloads import calendar_webhook_payload
 from bots.webhook_utils import trigger_webhook
@@ -38,12 +38,7 @@ def extract_meeting_url_from_text(text: str) -> Optional[str]:
 
     # Fallback: links without scheme (e.g., "zoom.us/j/12345") or mixed-case scheme
     # Try to find common meeting host patterns and prepend https:// when detected
-    scheme_less_patterns = [
-        r"(?:[\w.-]+\.)?zoom\.us/[^\s<>\"']+",
-        r"meet\.google\.com/[^\s<>\"']+",
-        r"teams\.microsoft\.com/[^\s<>\"']+",
-    ]
-    for pat in scheme_less_patterns:
+    for pat in SCHEME_LESS_PATTERNS:
         for m in re.finditer(pat, text, flags=re.IGNORECASE):
             candidate = m.group(0)
             if not candidate.lower().startswith("http"):

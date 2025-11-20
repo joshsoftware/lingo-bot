@@ -11,6 +11,14 @@ from .models import (
 
 HTTP_URL_RE = re.compile(r"https?://[^\s<>\"']+")
 
+# Patterns used to detect scheme-less meeting URLs (e.g. "zoom.us/j/123456")
+# Keep these here as the canonical source so other modules can reuse them.
+SCHEME_LESS_PATTERNS = [
+    r"(?:[\w.-]+\.)?zoom\.us/[^\s<>\"']+",
+    r"meet\.google\.com/[^\s<>\"']+",
+    r"teams\.microsoft\.com/[^\s<>\"']+",
+]
+
 
 def contains_multiple_urls(url: str):
     if not url:

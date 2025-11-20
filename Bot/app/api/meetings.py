@@ -90,15 +90,20 @@ def get_meetings(body: ScheduleMeeting, token: str = Depends(OAUTH2_SCHEME)):
             URL_CANDIDATE = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
 
             try:
-                # Prefer to reuse meeting_type_from_url when available
-                from bots.meeting_url_utils import meeting_type_from_url  # type: ignore
+                # Prefer to reuse meeting_type_from_url and the canonical patterns when available
+                from bots.meeting_url_utils import meeting_type_from_url, SCHEME_LESS_PATTERNS  # type: ignore
             except Exception:
                 try:
-                    from attendee.bots.meeting_url_utils import meeting_type_from_url  # type: ignore
+                    from attendee.bots.meeting_url_utils import meeting_type_from_url, SCHEME_LESS_PATTERNS  # type: ignore
                 except Exception:
-                    # Last-resort: accept any url (best-effort)
+                    # Last-resort: accept any url (best-effort) and provide default patterns
                     def meeting_type_from_url(url: str):
                         return True
+                    SCHEME_LESS_PATTERNS = [
+                        r"(?:[\w.-]+\.)?zoom\.us/[^\s<>\"']+",
+                        r"meet\.google\.com/[^\s<>\"']+",
+                        r"teams\.microsoft\.com/[^\s<>\"']+",
+                    ]
 
             def extract_meeting_url_from_text(text: str) -> Optional[str]:
                 if not text:
@@ -115,12 +120,7 @@ def get_meetings(body: ScheduleMeeting, token: str = Depends(OAUTH2_SCHEME)):
                         return url
 
                 # Fallback: links without scheme (e.g., "zoom.us/j/12345") or mixed-case scheme
-                scheme_less_patterns = [
-                    r"(?:[\w.-]+\.)?zoom\.us/[^\s<>\"']+",
-                    r"meet\.google\.com/[^\s<>\"']+",
-                    r"teams\.microsoft\.com/[^\s<>\"']+",
-                ]
-                for pat in scheme_less_patterns:
+                for pat in SCHEME_LESS_PATTERNS:
                     for m in re.finditer(pat, text, flags=re.IGNORECASE):
                         candidate = m.group(0)
                         if not candidate.lower().startswith("http"):

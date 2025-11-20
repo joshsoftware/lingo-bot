@@ -74,36 +74,25 @@ def _set_user_id_in_redis(value, key='bot:user_id', ttl=REDIS_USER_ID_TTL):
         logger.exception('Error writing USER_ID to Redis')
         return False
 
-
 async def _fetch_user_id_async(db_url: str):
-    """Connect to Postgres and return a probable user id from the session table.
-
-    This is intentionally defensive: it looks for common column names and falls
-    back to the first column value if necessary. Returns empty string on errors.
-    """
     try:
         conn = await asyncpg.connect(dsn=db_url)
+        print("Connected successfully!")
+
         try:
-            # Prefer a non-expired session (expires_at in the future), most
-            # recently created first. If none found, fall back to the most
-            # recent session regardless of expiry.
-            val = await conn.fetchval(
-                "SELECT user_id FROM session LIMIT 1"
-            )
+            query = "SELECT user_id FROM session LIMIT 1"
+            val = await conn.fetchval(query)
             if val:
                 return str(val)
-
-            if val:
-                print("Fetched user_id from session table:", val)
-                return str(val)
-
-            logger.warning('session table returned no rows')
             return ''
+
         finally:
             await conn.close()
-    except Exception:
-        logger.exception('Error fetching USER_ID from DB')
+
+    except Exception as e:
+        logger.exception("Error fetching USER_ID from DB ")
         return ''
+
 
 
 def get_user_id():
@@ -129,6 +118,7 @@ def get_user_id():
         pass
 
     db_url = DATABASE_URL or _build_db_url_from_env()
+    print( "Database URL:", db_url)
     if not db_url:
         logger.error('No DATABASE_URL or PG_* env vars set; cannot fetch USER_ID')
         _USER_ID_CACHE = ''
