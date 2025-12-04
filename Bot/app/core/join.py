@@ -133,8 +133,9 @@ def join_meeting_with_retry(meeting_url, bot_name):
     
     retry_count = 0
     while True:
-        if retry_count >= 5:
+        if retry_count >= 10:
             logger.info("Max retry of joining meeting exceeded")
+            del meetings_map[meeting_url]
             return
         retry_count += 1
         status_response = requests.get(
@@ -148,7 +149,7 @@ def join_meeting_with_retry(meeting_url, bot_name):
         redis_client.set(REDIS_KEY, json.dumps(meetings_map))
         
         if state not in ["joined_recording", "joined"]:
-            time.sleep(10)
+            time.sleep(20)
             continue
 
         if state in ["joined_recording", "joined"]:
