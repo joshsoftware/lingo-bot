@@ -75,12 +75,17 @@ def get_meetings(body: ScheduleMeeting, token: str = Depends(OAUTH2_SCHEME)):
     for event in events:
         meeting_url = event.get('hangoutLink')
 
-        # check is bot request is aleady sent for the meeting
+        # check if bot request is already sent for the meeting
         json_str = redis_client.get(BOT_ADDED_IN_MEETING_KEY)
         if json_str:
             meetings_map = json.loads(json_str)
 
-        if meetings_map and meeting_url in meetings_map.get(body.bot_name):
+        # Safely get the list of meetings already scheduled for this bot
+        bot_meetings = []
+        if isinstance(meetings_map, dict):
+            bot_meetings = meetings_map.get(body.bot_name, []) or []
+
+        if meeting_url and meeting_url in bot_meetings:
             logger.info(f" {meeting_url} is requested to be added by bot {body.bot_name} already scheduled. Skipping... ")
             continue
 
